@@ -1,0 +1,14 @@
+services:
+  kobo-library:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    container_name: kobo-library
+    restart: unless-stopped
+    ports:
+      - 3001:3001
+    environment:
+      - DATA_DIR=/app/data
+      - MAX_UPLOAD_MB=800
+    volumes:
+      - ./data:/app/data

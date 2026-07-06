@@ -1,0 +1,177 @@
+<!doctype html>
+<html>
+<head>
+	<title>Kobo Library</title>
+	<meta charset="utf-8"/>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+	<link rel="stylesheet" type="text/css" href="/static/style.css"/>
+	<script src="/static/common.js"></script>
+</head>
+<body>
+<main class="wrapper">
+	<h1>Kobo Library</h1>
+
+	<section class="qr-panel">
+		<img class="qr-code" src="/qr/page.svg" alt="QR code for this page"/>
+	</section>
+
+	<form action="/upload" method="post" enctype="multipart/form-data" id="uploadform" class="upload-panel">
+		<div class="file-row">
+			<label for="fileinput" id="choosebtn">Choose EPUB</label>
+			<input type="file" name="file" id="fileinput" accept=".epub,application/epub+zip,application/epub"/>
+			<input type="submit" value="Upload"/>
+		</div>
+		<div id="fileinfo"></div>
+		<div id="uploadstatus"></div>
+	</form>
+
+	<section class="books-section">
+		<h2>Books</h2>
+		<div id="books" class="book-list"></div>
+	</section>
+
+	<p class="note">This server is meant for a trusted local network. Converted books are stored on this machine.</p>
+</main>
+
+<script>
+var uploadform = document.getElementById('uploadform')
+var uploadstatus = document.getElementById('uploadstatus')
+var fileinput = document.getElementById('fileinput')
+var fileinfo = document.getElementById('fileinfo')
+var booksNode = document.getElementById('books')
+var flashtimer = null
+
+function hideUploadStatus() {
+	uploadstatus.style.opacity = 0
+	clearTimeout(flashtimer)
+	flashtimer = setTimeout(function () {
+		uploadstatus.textContent = ''
+		uploadstatus.className = ''
+	}, 500)
+}
+
+function handleFlash(flash) {
+	clearTimeout(flashtimer)
+	if (!flash) {
+		hideUploadStatus()
+		return
+	}
+
+	uploadstatus.className = flash.success ? 'success' : 'error'
+	uploadstatus.textContent = flash.message.trim()
+	uploadstatus.style.opacity = 1
+}
+
+function fileinputChange () {
+	var file = fileinput.files[0]
+	if (!file) {
+		fileinfo.textContent = ''
+		return
+	}
+
+	if (!file.name.toLowerCase().endsWith('.epub')) {
+		alert('Choose an EPUB file.')
+		fileinput.value = ''
+		fileinfo.textContent = ''
+		return
+	}
+
+	fileinfo.textContent = 'EPUB selected'
+}
+
+function loadBooks () {
+	xhr('GET', '/api/books', function (req) {
+		var books = []
+		try {
+			books = JSON.parse(req.responseText)
+		} catch (err) {}
+
+		booksNode.innerHTML = ''
+		if (!books.length) {
+			booksNode.innerHTML = '<p class="empty">No converted books yet.</p>'
+			return
+		}
+
+		books.forEach(function (book) {
+			var row = document.createElement('div')
+			row.className = 'book-row'
+
+			var title = document.createElement('div')
+			title.className = 'book-title'
+			title.textContent = book.title || book.filename
+
+			var author = document.createElement('div')
+			author.className = 'book-author'
+			author.textContent = book.author || ''
+
+			var remove = document.createElement('button')
+			remove.type = 'button'
+			remove.className = 'danger-button'
+			remove.textContent = 'Delete'
+			remove.onclick = function () {
+				if (!confirm('Delete ' + (book.title || 'this book') + '?')) return
+				xhr('DELETE', '/api/books/' + encodeURIComponent(book.id), loadBooks)
+			}
+
+			var download = document.createElement('a')
+			download.className = 'action-button'
+			download.href = book.downloadUrl
+			download.textContent = 'Download'
+
+			var actions = document.createElement('div')
+			actions.className = 'book-actions'
+			actions.appendChild(download)
+			actions.appendChild(remove)
+
+			var details = document.createElement('div')
+			details.className = 'book-details'
+			details.appendChild(title)
+			if (book.author) details.appendChild(author)
+			row.appendChild(details)
+			row.appendChild(actions)
+			booksNode.appendChild(row)
+		})
+	})
+}
+
+uploadstatus.addEventListener('click', hideUploadStatus, false)
+fileinput.addEventListener('change', fileinputChange, false)
+
+uploadform.addEventListener('submit', function (e) {
+	e.preventDefault()
+	hideUploadStatus()
+
+	var fd = new FormData(uploadform)
+	var req = new XMLHttpRequest()
+	req.open('POST', uploadform.action, true)
+	req.upload.onprogress = function (e) {
+		if (e.lengthComputable) {
+			var complete = e.loaded / e.total === 1
+			handleFlash({
+				success: true,
+				message: complete ? 'Processing EPUB...' : 'Uploading... ' + Math.round(100 * e.loaded / e.total) + '%'
+			})
+		}
+	}
+	req.onload = function () {
+		handleFlash({
+			success: req.status === 200,
+			message: req.responseText
+		})
+		if (req.status === 200) {
+			uploadform.reset()
+			fileinfo.textContent = ''
+			loadBooks()
+		}
+	}
+	req.onerror = function () {
+		handleFlash({ success: false, message: 'Upload failed.' })
+	}
+	req.send(fd)
+	return false
+}, false)
+
+loadBooks()
+</script>
+</body>
+</html>

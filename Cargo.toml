@@ -1,0 +1,18 @@
+[package]
+name = "kobo-library"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.103"
+axum = { version = "0.8.9", features = ["multipart"] }
+chrono = { version = "0.4.45", features = ["serde"] }
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
+roxmltree = "0.21.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+tokio = { version = "1.52.3", features = ["full"] }
+tokio-util = { version = "0.7.18", features = ["io"] }
+tower-http = { version = "0.7.0", features = ["fs"] }
+uuid = { version = "1.23.4", features = ["v4"] }
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }

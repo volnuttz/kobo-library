@@ -1,0 +1,275 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    color: #191919;
+    background: #f5f4ef;
+    line-height: 1.4;
+    font-family: Georgia, "Times New Roman", serif;
+    overflow-x: hidden;
+}
+
+.wrapper {
+    margin: 0 auto;
+    padding: 22px 16px 28px;
+    width: 100%;
+    max-width: 720px;
+}
+
+h1 {
+    margin: 0 0 14px;
+    text-align: center;
+    font-size: 2.15em;
+    font-weight: normal;
+    line-height: 1.1;
+}
+
+h2 {
+    margin: 0 0 10px;
+    font-size: 1.2em;
+    font-weight: normal;
+    line-height: 1.2;
+}
+
+a {
+    color: #111;
+}
+
+.qr-panel {
+    margin: 0 auto 16px;
+    text-align: center;
+}
+
+.qr-code {
+    display: block;
+    margin: 0 auto;
+    width: 178px;
+    height: 178px;
+    padding: 6px;
+    border: 1px solid #d7d2c6;
+    border-radius: 6px;
+    background: #fff;
+}
+
+.panel {
+    margin: 0 0 20px;
+    padding: 14px;
+    width: 100%;
+    border: 1px solid #cfcabe;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.upload-panel {
+    margin: 0 0 22px;
+    text-align: center;
+}
+
+.file-row {
+    display: block;
+    margin: 0 auto;
+    text-align: center;
+    white-space: nowrap;
+}
+
+#choosebtn,
+input[type="submit"],
+button,
+.action-button {
+    appearance: none;
+    min-height: 44px;
+    border: 1px solid #1d1d1d;
+    border-radius: 6px;
+    background: #f0ede5;
+    color: #111;
+    cursor: pointer;
+    display: inline-block;
+    font: inherit;
+    font-size: 0.98em;
+    line-height: 1.15;
+    padding: 0.55em 0.9em;
+    text-align: center;
+    text-decoration: none;
+    min-width: 0;
+    vertical-align: middle;
+}
+
+#choosebtn {
+    margin-right: 6px;
+}
+
+input[type="submit"] {
+    min-width: 104px;
+    background: #111;
+    color: #fff;
+}
+
+.action-button {
+    background: #111;
+    color: #fff;
+}
+
+.danger-button {
+    border-color: #9c4f4f;
+    background: #fff;
+    color: #7c2626;
+}
+
+#choosebtn:focus,
+input[type="submit"]:focus,
+button:focus,
+.action-button:focus,
+#choosebtn:active,
+input[type="submit"]:active,
+button:active,
+.action-button:active {
+    outline: 2px solid #111;
+    outline-offset: 2px;
+}
+
+#fileinput {
+    display: none;
+}
+
+#fileinfo,
+.book-author,
+.note,
+.empty {
+    color: #555;
+    font-size: 0.95em;
+}
+
+#fileinfo {
+    min-height: 1.4em;
+    margin-top: 8px;
+    text-align: center;
+}
+
+#uploadstatus {
+    opacity: 0;
+    min-height: 0;
+    margin-top: 10px;
+    padding: 0;
+    border-radius: 6px;
+    cursor: pointer;
+    line-height: 1.45;
+    transition: opacity .25s ease-in-out;
+}
+
+#uploadstatus.success,
+#uploadstatus.error {
+    padding: 9px 10px;
+}
+
+#uploadstatus.success {
+    background-color: #e8f3e3;
+    border: 1px solid #86a978;
+}
+
+#uploadstatus.error {
+    background-color: #f7e3e1;
+    border: 1px solid #b96767;
+    white-space: pre-wrap;
+}
+
+.books-section {
+    margin-top: 2px;
+}
+
+.book-list {
+    border-top: 1px solid #d8d3c8;
+}
+
+.book-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 13px 0;
+    border-bottom: 1px solid #d8d3c8;
+    min-width: 0;
+}
+
+.book-details {
+    min-width: 0;
+}
+
+.book-title {
+    color: #111;
+    display: block;
+    font-size: 1.12em;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.book-author {
+    margin-top: 3px;
+    overflow-wrap: anywhere;
+}
+
+.book-actions {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.note {
+    margin: 18px 0 0;
+    text-align: center;
+}
+
+.empty {
+    margin: 14px 0;
+}
+
+@media (max-width: 560px) {
+    .wrapper {
+        padding: 18px 12px 24px;
+    }
+
+    h1 {
+        font-size: 1.9em;
+    }
+
+    .qr-code {
+        width: 166px;
+        height: 166px;
+    }
+
+    .book-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .book-actions {
+        justify-content: stretch;
+        width: 100%;
+    }
+
+    .book-actions .action-button,
+    .book-actions button {
+        flex: 1 1 0;
+        padding-left: 0.5em;
+        padding-right: 0.5em;
+    }
+
+    #choosebtn,
+    input[type="submit"] {
+        min-height: 42px;
+        padding-left: 0.7em;
+        padding-right: 0.7em;
+    }
+
+    #choosebtn {
+        margin-right: 5px;
+    }
+
+    input[type="submit"] {
+        min-width: 92px;
+    }
+}
