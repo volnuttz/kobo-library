@@ -1,6 +1,7 @@
 use std::{
     env,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 pub struct Config {
@@ -10,6 +11,15 @@ pub struct Config {
     pub shelves_dir: PathBuf,
     pub kepubify_bin: PathBuf,
     pub max_upload_bytes: usize,
+    pub max_books_per_shelf: i64,
+    pub max_shelf_bytes: i64,
+    pub max_service_bytes: i64,
+    pub max_archive_entries: usize,
+    pub max_decompressed_bytes: u64,
+    pub conversion_timeout: std::time::Duration,
+    pub conversion_slots: Arc<tokio::sync::Semaphore>,
+    pub upload_slots: Arc<tokio::sync::Semaphore>,
+    pub download_slots: Arc<tokio::sync::Semaphore>,
     pub public_base_url: Option<String>,
     pub shelf_access_code: Option<String>,
 }
@@ -27,7 +37,12 @@ impl Config {
         let max_upload_mb = env::var("MAX_UPLOAD_MB")
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(800);
+            .unwrap_or(100);
+        let conversion_concurrency = env::var("CONVERSION_CONCURRENCY")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(2);
         let kepubify_bin = env::var_os("KEPUBIFY_BIN")
             .map(|value| absolute_path(&cwd, PathBuf::from(value)))
             .unwrap_or_else(|| {
@@ -53,6 +68,15 @@ impl Config {
             data_dir,
             kepubify_bin,
             max_upload_bytes: max_upload_mb * 1024 * 1024,
+            max_books_per_shelf: 20,
+            max_shelf_bytes: 500 * 1024 * 1024,
+            max_service_bytes: 10 * 1024 * 1024 * 1024,
+            max_archive_entries: 10_000,
+            max_decompressed_bytes: 500 * 1024 * 1024,
+            conversion_timeout: std::time::Duration::from_secs(300),
+            conversion_slots: Arc::new(tokio::sync::Semaphore::new(conversion_concurrency)),
+            upload_slots: Arc::new(tokio::sync::Semaphore::new(8)),
+            download_slots: Arc::new(tokio::sync::Semaphore::new(32)),
             public_base_url,
             shelf_access_code,
         }
@@ -96,6 +120,15 @@ impl Config {
             data_dir,
             kepubify_bin: PathBuf::from("kepubify"),
             max_upload_bytes: 100 * 1024 * 1024,
+            max_books_per_shelf: 20,
+            max_shelf_bytes: 500 * 1024 * 1024,
+            max_service_bytes: 10 * 1024 * 1024 * 1024,
+            max_archive_entries: 10_000,
+            max_decompressed_bytes: 500 * 1024 * 1024,
+            conversion_timeout: std::time::Duration::from_secs(300),
+            conversion_slots: Arc::new(tokio::sync::Semaphore::new(2)),
+            upload_slots: Arc::new(tokio::sync::Semaphore::new(8)),
+            download_slots: Arc::new(tokio::sync::Semaphore::new(32)),
             public_base_url: public_base_url.map(str::to_string),
             shelf_access_code: shelf_access_code.map(str::to_string),
         }

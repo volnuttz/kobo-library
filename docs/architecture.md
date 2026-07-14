@@ -194,6 +194,29 @@ Use HTTPS, security headers, restrictive CSP, `noindex`, safe download headers,
 and token-redacted observability. Do not assume an `.epub` extension makes a ZIP
 archive safe.
 
+Phase 5 enforces a 100 MiB request and converted-file limit, 20 books and 500
+MiB per shelf, and 10 GiB of ready book data service-wide. Metadata reservations
+and final storage accounting are conditional SQLite transactions, so concurrent
+uploads cannot race past those limits. At most eight uploads, 32 downloads, and
+two conversions execute concurrently. Conversion has a five-minute timeout and,
+on Unix, address-space, CPU, output-file, and file-descriptor limits.
+
+EPUB validation permits at most 10,000 ZIP entries and 500 MiB total declared
+decompressed data. XML metadata reads and kepub marker scans have smaller
+per-entry bounds. Requests have a six-minute outer timeout. Shelf creation and
+capability-authorized page, polling, QR, upload, download, and delete actions use
+in-process fixed-window limits. Limiter keys contain only truncated hashes and
+expire from memory; invalid capabilities are rejected before token-specific
+limiter state is allocated.
+
+All responses receive a same-origin CSP, clickjacking and MIME protections, a
+restricted permissions policy, and `noindex`. Shelf responses also use
+`Cache-Control: no-store` and `Referrer-Policy: no-referrer`. The application
+does not emit request/access logs. Aggregate `/metrics` output includes active
+shelves, ready-book bytes, cleanup lag/failures, upload/download counts,
+conversion-pipeline time, and rejected requests; it contains no capability,
+book, filename, or shelf identifier.
+
 ## Compatibility Principles
 
 - Keep critical UI behavior compatible with the target Kobo browser.

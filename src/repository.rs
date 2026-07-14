@@ -28,6 +28,13 @@ pub struct CleanupShelf {
     pub state: String,
 }
 
+#[derive(Debug)]
+pub struct ServiceMetrics {
+    pub active_shelves: i64,
+    pub stored_bytes: i64,
+    pub cleanup_lag_seconds: i64,
+}
+
 #[async_trait]
 pub trait ShelfRepository: Send + Sync {
     async fn create_shelf(
@@ -48,14 +55,26 @@ pub trait ShelfRepository: Send + Sync {
     async fn cleanup_candidates(&self, now: DateTime<Utc>) -> AppResult<Vec<CleanupShelf>>;
     async fn claim_expiring(&self, shelf_id: &str, now: DateTime<Utc>) -> AppResult<bool>;
     async fn delete_expiring(&self, shelf_id: &str) -> AppResult<()>;
+    async fn service_metrics(&self, now: DateTime<Utc>) -> AppResult<ServiceMetrics>;
 }
 
 #[async_trait]
 pub trait BookRepository: Send + Sync {
     async fn list_books(&self, shelf_id: &str) -> AppResult<Vec<Book>>;
     async fn book(&self, shelf_id: &str, book_id: &str) -> AppResult<Option<Book>>;
+    #[cfg_attr(not(test), allow(dead_code))]
     async fn insert_pending(&self, book: &Book) -> AppResult<()>;
+    async fn reserve_pending(&self, book: &Book, max_books: i64) -> AppResult<bool>;
+    #[cfg_attr(not(test), allow(dead_code))]
     async fn finalize_book(&self, shelf_id: &str, book_id: &str, size: i64) -> AppResult<bool>;
+    async fn finalize_book_with_quotas(
+        &self,
+        shelf_id: &str,
+        book_id: &str,
+        size: i64,
+        max_shelf_bytes: i64,
+        max_service_bytes: i64,
+    ) -> AppResult<bool>;
     async fn mark_deleting(&self, shelf_id: &str, book_id: &str) -> AppResult<Option<Book>>;
     async fn finish_deleting(&self, shelf_id: &str, book_id: &str) -> AppResult<()>;
     async fn discard_pending(&self, shelf_id: &str, book_id: &str) -> AppResult<()>;
@@ -223,6 +242,32 @@ mod tests {
         let _ = std::fs::remove_file(path.with_extension("sqlite3-shm"));
         let _ = std::fs::remove_file(path.with_extension("sqlite3-wal"));
     }
+
+    #[tokio::test]
+    async fn book_count_and_byte_quotas_are_atomic() {
+        let database = Database::memory().await.unwrap();
+        let shelf_id = Uuid::new_v4().to_string();
+        create_test_shelf(&database, &shelf_id).await;
+        let first_id = Uuid::new_v4().to_string();
+        let second_id = Uuid::new_v4().to_string();
+        let first = pending_book(&shelf_id, &first_id);
+        let second = pending_book(&shelf_id, &second_id);
+
+        assert!(database.reserve_pending(&first, 1).await.unwrap());
+        assert!(!database.reserve_pending(&second, 1).await.unwrap());
+        assert!(
+            !database
+                .finalize_book_with_quotas(&shelf_id, &first_id, 11, 10, 100)
+                .await
+                .unwrap()
+        );
+        assert!(
+            database
+                .finalize_book_with_quotas(&shelf_id, &first_id, 10, 10, 10)
+                .await
+                .unwrap()
+        );
+    }
 }
 
 #[async_trait]
@@ -277,6 +322,23 @@ impl ShelfRepository for Database {
             .map_err(AppError::internal)?;
         Ok(())
     }
+
+    async fn service_metrics(&self, now: DateTime<Utc>) -> AppResult<ServiceMetrics> {
+        let active_shelves = sqlx::query_scalar("SELECT COUNT(*) FROM shelves WHERE state = 'active' AND expires_at > ? AND hard_expires_at > ?")
+            .bind(now).bind(now).fetch_one(&self.pool).await.map_err(AppError::internal)?;
+        let stored_bytes =
+            sqlx::query_scalar("SELECT COALESCE(SUM(size), 0) FROM books WHERE status = 'ready'")
+                .fetch_one(&self.pool)
+                .await
+                .map_err(AppError::internal)?;
+        let oldest: Option<DateTime<Utc>> = sqlx::query_scalar("SELECT MIN(CASE WHEN expires_at < hard_expires_at THEN expires_at ELSE hard_expires_at END) FROM shelves WHERE state = 'expiring' OR expires_at <= ? OR hard_expires_at <= ?")
+            .bind(now).bind(now).fetch_one(&self.pool).await.map_err(AppError::internal)?;
+        Ok(ServiceMetrics {
+            active_shelves,
+            stored_bytes,
+            cleanup_lag_seconds: oldest.map_or(0, |expired| (now - expired).num_seconds().max(0)),
+        })
+    }
 }
 
 #[async_trait]
@@ -299,10 +361,43 @@ impl BookRepository for Database {
         Ok(())
     }
 
+    async fn reserve_pending(&self, book: &Book, max_books: i64) -> AppResult<bool> {
+        let changed = sqlx::query("INSERT INTO books (id, shelf_id, status, title, author, filename, original_name, stored_filename, size, uploaded_at) SELECT ?, ?, 'pending', ?, ?, ?, ?, ?, 0, ? WHERE (SELECT COUNT(*) FROM books WHERE shelf_id = ? AND status != 'deleting') < ?")
+            .bind(&book.id).bind(&book.shelf_id).bind(&book.title).bind(&book.author)
+            .bind(&book.filename).bind(&book.original_name).bind(&book.stored_filename)
+            .bind(book.uploaded_at).bind(&book.shelf_id).bind(max_books)
+            .execute(&self.pool).await.map_err(AppError::internal)?.rows_affected() == 1;
+        Ok(changed)
+    }
+
     async fn finalize_book(&self, shelf_id: &str, book_id: &str, size: i64) -> AppResult<bool> {
         let mut tx = self.pool.begin().await.map_err(AppError::internal)?;
         let changed = sqlx::query("UPDATE books SET status = 'ready', size = ? WHERE shelf_id = ? AND id = ? AND status = 'pending'")
             .bind(size).bind(shelf_id).bind(book_id).execute(&mut *tx).await.map_err(AppError::internal)?.rows_affected() == 1;
+        if changed {
+            sqlx::query("UPDATE shelves SET revision = revision + 1 WHERE id = ?")
+                .bind(shelf_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(AppError::internal)?;
+        }
+        tx.commit().await.map_err(AppError::internal)?;
+        Ok(changed)
+    }
+
+    async fn finalize_book_with_quotas(
+        &self,
+        shelf_id: &str,
+        book_id: &str,
+        size: i64,
+        max_shelf_bytes: i64,
+        max_service_bytes: i64,
+    ) -> AppResult<bool> {
+        let mut tx = self.pool.begin().await.map_err(AppError::internal)?;
+        let changed = sqlx::query("UPDATE books SET status = 'ready', size = ? WHERE shelf_id = ? AND id = ? AND status = 'pending' AND (SELECT COALESCE(SUM(size), 0) FROM books WHERE shelf_id = ? AND status = 'ready') + ? <= ? AND (SELECT COALESCE(SUM(size), 0) FROM books WHERE status = 'ready') + ? <= ?")
+            .bind(size).bind(shelf_id).bind(book_id).bind(shelf_id).bind(size)
+            .bind(max_shelf_bytes).bind(size).bind(max_service_bytes)
+            .execute(&mut *tx).await.map_err(AppError::internal)?.rows_affected() == 1;
         if changed {
             sqlx::query("UPDATE shelves SET revision = revision + 1 WHERE id = ?")
                 .bind(shelf_id)

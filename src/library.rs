@@ -22,6 +22,12 @@ pub async fn store_upload(
     upload_path: &Path,
     original_name: &str,
 ) -> AppResult<Book> {
+    epub::validate_archive(
+        upload_path,
+        config.max_archive_entries,
+        config.max_decompressed_bytes,
+    )
+    .await?;
     let metadata = epub::extract_metadata(upload_path)
         .await
         .unwrap_or_default();
@@ -30,15 +36,6 @@ pub async fn store_upload(
     let stored_filename = format!("{id}.kepub.epub");
     let final_path = storage.book_path(shelf_id, &id)?;
     let staged_path = upload_path.with_extension("ready.kepub.epub");
-
-    if should_skip_conversion(upload_path, original_name).await {
-        fs::rename(upload_path, &staged_path)
-            .await
-            .map_err(AppError::internal)?;
-    } else {
-        run_kepubify(config, upload_path, &staged_path).await?;
-        remove_file_if_exists(upload_path).await?;
-    }
 
     let book = Book {
         id,
@@ -54,9 +51,28 @@ pub async fn store_upload(
         size: 0,
         uploaded_at: Utc::now(),
     };
+    if !repository
+        .reserve_pending(&book, config.max_books_per_shelf)
+        .await?
+    {
+        return Err(AppError::payload_too_large(
+            "This shelf has reached its book limit.",
+        ));
+    }
 
-    if let Err(error) = repository.insert_pending(&book).await {
+    let conversion_result = if should_skip_conversion(upload_path, original_name).await {
+        fs::rename(upload_path, &staged_path)
+            .await
+            .map_err(AppError::internal)
+    } else {
+        match run_kepubify(config, upload_path, &staged_path).await {
+            Ok(()) => remove_file_if_exists(upload_path).await,
+            Err(error) => Err(error),
+        }
+    };
+    if let Err(error) = conversion_result {
         let _ = remove_file_if_exists(&staged_path).await;
+        repository.discard_pending(shelf_id, &book.id).await?;
         return Err(error);
     }
 
@@ -67,9 +83,27 @@ pub async fn store_upload(
         .await
         .map_err(AppError::internal)?
         .len() as i64;
-    if !repository.finalize_book(shelf_id, &book.id, size).await? {
-        return Err(AppError::internal(
-            "book publication state changed unexpectedly",
+    if size > config.max_upload_bytes as i64 {
+        remove_file_if_exists(&final_path).await?;
+        repository.discard_pending(shelf_id, &book.id).await?;
+        return Err(AppError::payload_too_large(
+            "The converted EPUB exceeds the file size limit.",
+        ));
+    }
+    if !repository
+        .finalize_book_with_quotas(
+            shelf_id,
+            &book.id,
+            size,
+            config.max_shelf_bytes,
+            config.max_service_bytes,
+        )
+        .await?
+    {
+        remove_file_if_exists(&final_path).await?;
+        repository.discard_pending(shelf_id, &book.id).await?;
+        return Err(AppError::payload_too_large(
+            "Publishing this book would exceed a storage quota.",
         ));
     }
 
@@ -97,15 +131,30 @@ pub async fn delete_book(
 pub async fn reconcile_incomplete(
     repository: &impl BookRepository,
     storage: &Storage,
+    max_file_bytes: i64,
+    max_shelf_bytes: i64,
+    max_service_bytes: i64,
 ) -> AppResult<()> {
     for book in repository.incomplete_books().await? {
         let path = storage.book_path(&book.shelf_id, &book.id)?;
         match book.status.as_str() {
             "pending" => match fs::metadata(&path).await {
                 Ok(metadata) => {
-                    repository
-                        .finalize_book(&book.shelf_id, &book.id, metadata.len() as i64)
-                        .await?;
+                    let size = metadata.len() as i64;
+                    if size > max_file_bytes
+                        || !repository
+                            .finalize_book_with_quotas(
+                                &book.shelf_id,
+                                &book.id,
+                                size,
+                                max_shelf_bytes,
+                                max_service_bytes,
+                            )
+                            .await?
+                    {
+                        remove_file_if_exists(&path).await?;
+                        repository.discard_pending(&book.shelf_id, &book.id).await?;
+                    }
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                     repository.discard_pending(&book.shelf_id, &book.id).await?;
@@ -178,7 +227,9 @@ mod tests {
             .await
             .unwrap();
 
-        reconcile_incomplete(&database, &storage).await.unwrap();
+        reconcile_incomplete(&database, &storage, 100, 500, 1_000)
+            .await
+            .unwrap();
 
         let book = database.book(&shelf_id, &book_id).await.unwrap().unwrap();
         assert_eq!(book.size, 5);
@@ -213,7 +264,9 @@ mod tests {
             .unwrap();
         database.mark_deleting(&shelf_id, &book_id).await.unwrap();
 
-        reconcile_incomplete(&database, &storage).await.unwrap();
+        reconcile_incomplete(&database, &storage, 100, 500, 1_000)
+            .await
+            .unwrap();
 
         assert!(database.book(&shelf_id, &book_id).await.unwrap().is_none());
         assert!(!storage.book_path(&shelf_id, &book_id).unwrap().exists());

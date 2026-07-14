@@ -54,9 +54,8 @@ rejected before conversion where possible, and conversion output is also
 checked before publication. The application maintainer owns these defaults.
 Revisit them using conversion duration, rejection, and disk-capacity metrics.
 
-The current trusted-network `MAX_UPLOAD_MB=800` setting is legacy behavior, not
-the hosted-service quota. Phase 3 introduces shelf quotas and Phase 5 completes
-the resource-exhaustion controls required for public hosting.
+`MAX_UPLOAD_MB` defaults to 100. Phase 5 applies the same bound to converted
+output and adds transactional shelf and service-wide quota enforcement.
 
 ### ADR-009: Shelf creation initially requires a deployment access code
 

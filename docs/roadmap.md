@@ -129,22 +129,30 @@ clock and do not sleep.
 
 ## Phase 5 — Internet Hardening
 
-- [ ] Enforce per-file, per-shelf, and service-wide storage limits.
-- [ ] Rate-limit shelf creation, uploads, downloads, and conversion work.
-- [ ] Limit ZIP entry count and decompressed size to resist archive bombs.
-- [ ] Add conversion timeout, concurrency, and process resource controls.
-- [ ] Validate proxy/public URL configuration and enforce HTTPS in production.
-- [ ] Add security headers, a restrictive CSP, and `noindex` directives.
-- [ ] Ensure sensitive paths are excluded from analytics and access logs.
-- [ ] Add structured metrics for active shelves, disk use, failures, cleanup lag,
+- [x] Enforce per-file, per-shelf, and service-wide storage limits.
+- [x] Rate-limit shelf creation, uploads, downloads, and conversion work.
+- [x] Limit ZIP entry count and decompressed size to resist archive bombs.
+- [x] Add conversion timeout, concurrency, and process resource controls.
+- [x] Validate proxy/public URL configuration and enforce HTTPS in production.
+- [x] Add security headers, a restrictive CSP, and `noindex` directives.
+- [x] Ensure sensitive paths are excluded from analytics and access logs.
+- [x] Add structured metrics for active shelves, disk use, failures, cleanup lag,
   conversion duration, and rejected requests.
-- [ ] Define backup expectations: ephemeral content does not require backup, but
+- [x] Define backup expectations: ephemeral content does not require backup, but
   deployment configuration and schema migrations do.
-- [ ] Perform a public-hosting review using `$review-public-hosting`.
+- [x] Perform a public-hosting review using `$review-public-hosting`.
 
 Exit criteria: anonymous use cannot create unbounded storage/CPU cost, capability
 tokens are handled as secrets, and operators can detect capacity or cleanup
 failures.
+
+Phase 5 completed with transactional book/storage quotas, bounded ZIP inspection,
+fixed-window request limits, global upload/download/conversion concurrency,
+converter timeout and Unix resource limits, restrictive response headers, and
+token-free service metrics. Hosted startup requires an HTTPS public origin and
+creation access code. The public-hosting review found no unresolved blocker for
+the single-process MVP; deployment proxy logging and disk alerts remain Phase 6
+operator configuration.
 
 ## Phase 6 — Deployment and Launch
 

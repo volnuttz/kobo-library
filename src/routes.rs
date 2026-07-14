@@ -10,9 +10,10 @@ use axum::{
     body::Body,
     extract::{DefaultBodyLimit, Multipart, Path as AxumPath, State},
     http::{
-        HeaderMap, HeaderValue,
+        HeaderMap, HeaderName, HeaderValue, Request,
         header::{CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_TYPE, HOST, REFERRER_POLICY},
     },
+    middleware::{self, Next},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get, post},
 };
@@ -26,6 +27,7 @@ use tokio::{
 };
 use tokio_util::io::ReaderStream;
 use tower_http::services::ServeDir;
+use tower_http::timeout::TimeoutLayer;
 use url::Url;
 
 use crate::{
@@ -33,7 +35,8 @@ use crate::{
     config::Config,
     error::{AppError, AppResult},
     library::{delete_book as delete_stored_book, store_upload},
-    repository::{BookRepository, Database},
+    observability::{Metrics, RateLimiter},
+    repository::{BookRepository, Database, ShelfRepository},
     shelves::{OperationGuard, OperationKind, ShelfService},
     storage::{Storage, remove_file_if_exists},
 };
@@ -46,6 +49,8 @@ pub struct AppState {
     pub database: Arc<Database>,
     pub storage: Arc<Storage>,
     pub shelves: Arc<ShelfService>,
+    pub metrics: Arc<Metrics>,
+    pub rate_limiter: Arc<RateLimiter>,
 }
 
 #[derive(Deserialize)]
@@ -64,6 +69,7 @@ struct ShelfSnapshot {
 struct GuardedDownload {
     file: File,
     operation: OperationGuard,
+    _permit: tokio::sync::OwnedSemaphorePermit,
 }
 
 impl AsyncRead for GuardedDownload {
@@ -92,8 +98,14 @@ pub fn router(state: AppState) -> Router {
         .route("/s/{token}/api/books/{id}", delete(delete_book))
         .route("/s/{token}/upload", post(upload_book))
         .route("/s/{token}/books/{id}/download", get(download_book))
+        .route("/metrics", get(metrics))
         .nest_service("/static", ServeDir::new("static"))
         .layer(DefaultBodyLimit::max(state.config.max_upload_bytes))
+        .layer(TimeoutLayer::with_status_code(
+            axum::http::StatusCode::REQUEST_TIMEOUT,
+            std::time::Duration::from_secs(360),
+        ))
+        .layer(middleware::from_fn(security_headers))
         .with_state(state)
 }
 
@@ -118,6 +130,7 @@ async fn create_shelf_with_code(
 }
 
 async fn create_shelf_redirect(state: &AppState) -> AppResult<Response> {
+    enforce_rate(state, "create", "service", 30, 60)?;
     let created = state.shelves.create().await?;
     Ok(Redirect::to(&format!("/s/{}/", created.token)).into_response())
 }
@@ -127,6 +140,7 @@ async fn shelf_page(
     AxumPath(token): AxumPath<String>,
 ) -> AppResult<Response> {
     state.shelves.authorize(&token, true).await?;
+    enforce_rate(&state, "page", &token, 30, 60)?;
     private_response(Html(include_str!("../static/upload.html")))
 }
 
@@ -136,6 +150,7 @@ async fn list_books(
     headers: HeaderMap,
 ) -> AppResult<Response> {
     let shelf = state.shelves.authorize(&token, false).await?;
+    enforce_rate(&state, "poll", &token, 30, 60)?;
     let etag = format!("\"{}-{}\"", shelf.revision, shelf.expires_at.timestamp());
     if headers
         .get(axum::http::header::IF_NONE_MATCH)
@@ -169,6 +184,7 @@ async fn qr_code(
     headers: HeaderMap,
 ) -> AppResult<Response> {
     state.shelves.authorize(&token, false).await?;
+    enforce_rate(&state, "qr", &token, 30, 60)?;
     if target != "page.svg" {
         return Err(AppError::not_found("QR target not found"));
     }
@@ -195,6 +211,14 @@ async fn upload_book(
         .shelves
         .authorize_operation(&token, OperationKind::Mutation)
         .await?;
+    enforce_rate(&state, "upload", &token, 10, 60)?;
+    let _upload_permit = state
+        .config
+        .upload_slots
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(AppError::internal)?;
     let mut saved_upload: Option<(PathBuf, String)> = None;
 
     while let Some(mut field) = multipart.next_field().await.map_err(AppError::internal)? {
@@ -214,9 +238,27 @@ async fn upload_book(
             .await
             .map_err(AppError::internal)?;
         let mut size = 0_u64;
-        while let Some(chunk) = field.chunk().await.map_err(AppError::internal)? {
+        loop {
+            let chunk = match field.chunk().await {
+                Ok(Some(chunk)) => chunk,
+                Ok(None) => break,
+                Err(error) => {
+                    let _ = remove_file_if_exists(&upload_path).await;
+                    return Err(AppError::internal(error));
+                }
+            };
             size += chunk.len() as u64;
-            file.write_all(&chunk).await.map_err(AppError::internal)?;
+            if size > state.config.max_upload_bytes as u64 {
+                remove_file_if_exists(&upload_path).await?;
+                return Err(AppError::payload_too_large(
+                    "The EPUB exceeds the upload size limit.",
+                ));
+            }
+            if let Err(error) = file.write_all(&chunk).await {
+                drop(file);
+                let _ = remove_file_if_exists(&upload_path).await;
+                return Err(AppError::internal(error));
+            }
         }
         if size == 0 {
             remove_file_if_exists(&upload_path).await?;
@@ -230,6 +272,7 @@ async fn upload_book(
 
     let (upload_path, original_name) =
         saved_upload.ok_or_else(|| AppError::bad_request("Choose an EPUB file first."))?;
+    let started = std::time::Instant::now();
     let result = store_upload(
         &state.config,
         state.database.as_ref(),
@@ -239,10 +282,16 @@ async fn upload_book(
         &original_name,
     )
     .await;
+    Metrics::add(
+        &state.metrics.conversion_millis,
+        started.elapsed().as_millis() as u64,
+    );
     if result.is_err() {
+        Metrics::increment(&state.metrics.uploads_failed);
         let _ = remove_file_if_exists(&upload_path).await;
     }
     let book = result?;
+    Metrics::increment(&state.metrics.uploads_completed);
     private_response(format!("Ready for Kobo: {}", book.filename))
 }
 
@@ -254,11 +303,20 @@ async fn download_book(
         .shelves
         .authorize_operation(&token, OperationKind::Download)
         .await?;
+    enforce_rate(&state, "download", &token, 120, 60)?;
+    let download_permit = state
+        .config
+        .download_slots
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(AppError::internal)?;
     let book = state
         .database
         .book(&shelf.id, &id)
         .await?
         .ok_or_else(|| AppError::not_found("Book not found"))?;
+    Metrics::increment(&state.metrics.downloads_started);
     let file = File::open(state.storage.book_path(&shelf.id, &book.id)?)
         .await
         .map_err(AppError::internal)?;
@@ -269,6 +327,7 @@ async fn download_book(
     let mut response = Response::new(Body::from_stream(ReaderStream::new(GuardedDownload {
         file,
         operation,
+        _permit: download_permit,
     })));
     response.headers_mut().insert(
         CONTENT_TYPE,
@@ -282,6 +341,67 @@ async fn download_book(
     Ok(response)
 }
 
+async fn metrics(State(state): State<AppState>) -> AppResult<Response> {
+    enforce_rate(&state, "metrics", "service", 120, 60)?;
+    let snapshot = state.database.service_metrics(chrono::Utc::now()).await?;
+    Ok((
+        [(CONTENT_TYPE, "text/plain; version=0.0.4")],
+        state.metrics.render(
+            snapshot.active_shelves,
+            snapshot.stored_bytes,
+            snapshot.cleanup_lag_seconds,
+        ),
+    )
+        .into_response())
+}
+
+fn enforce_rate(
+    state: &AppState,
+    category: &str,
+    secret: &str,
+    limit: u32,
+    seconds: u64,
+) -> AppResult<()> {
+    if state.rate_limiter.allow(
+        category,
+        secret,
+        limit,
+        std::time::Duration::from_secs(seconds),
+    ) {
+        return Ok(());
+    }
+    Metrics::increment(&state.metrics.requests_rejected);
+    Err(AppError::too_many_requests(
+        "Too many requests. Try again later.",
+    ))
+}
+
+async fn security_headers(request: Request<Body>, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert(
+        axum::http::header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"),
+    );
+    headers.insert(
+        axum::http::header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        axum::http::header::X_FRAME_OPTIONS,
+        HeaderValue::from_static("DENY"),
+    );
+    headers.insert(
+        HeaderName::from_static("x-robots-tag"),
+        HeaderValue::from_static("noindex, nofollow, noarchive"),
+    );
+    headers.insert(
+        HeaderName::from_static("permissions-policy"),
+        HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
+    );
+    response
+}
+
 async fn delete_book(
     State(state): State<AppState>,
     AxumPath((token, id)): AxumPath<(String, String)>,
@@ -290,6 +410,7 @@ async fn delete_book(
         .shelves
         .authorize_operation(&token, OperationKind::Mutation)
         .await?;
+    enforce_rate(&state, "delete", &token, 30, 60)?;
     if !delete_stored_book(state.database.as_ref(), &state.storage, &shelf.id, &id).await? {
         return Err(AppError::not_found("Book not found"));
     }
@@ -417,6 +538,8 @@ mod tests {
             database: database.clone(),
             storage: storage.clone(),
             shelves,
+            metrics: Arc::new(Metrics::default()),
+            rate_limiter: Arc::new(RateLimiter::default()),
         });
         (app, database, storage, first, second, root)
     }
@@ -605,12 +728,86 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    #[tokio::test]
+    async fn responses_have_restrictive_security_headers() {
+        let (app, _, _, token, _, root) = test_app().await;
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/s/{token}/"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let csp = response
+            .headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(csp.contains("default-src 'self'"));
+        assert!(!csp.contains("unsafe-inline"));
+        assert_eq!(
+            response.headers().get("x-robots-tag").unwrap(),
+            "noindex, nofollow, noarchive"
+        );
+        assert_eq!(
+            response.headers().get("x-content-type-options").unwrap(),
+            "nosniff"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn metrics_do_not_expose_capabilities_or_book_metadata() {
+        let (app, database, _, token, _, root) = test_app().await;
+        let hash = Sha256::digest(token.as_bytes()).to_vec();
+        let shelf = database.shelf_by_token_hash(&hash).await.unwrap().unwrap();
+        let book_id = Uuid::new_v4().to_string();
+        database
+            .insert_pending(&Book {
+                id: book_id.clone(),
+                shelf_id: shelf.id.clone(),
+                status: "pending".to_string(),
+                title: "Secret title".to_string(),
+                author: None,
+                filename: "Secret.kepub.epub".to_string(),
+                original_name: "Secret.epub".to_string(),
+                stored_filename: format!("{book_id}.kepub.epub"),
+                size: 0,
+                uploaded_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+        database
+            .finalize_book(&shelf.id, &book_id, 42)
+            .await
+            .unwrap();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("kobo_stored_bytes 42"));
+        assert!(!body.contains(&token));
+        assert!(!body.contains("Secret"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn critical_frontend_avoids_modern_only_javascript() {
         let javascript = format!(
-            "{}\n{}",
+            "{}\n{}\n{}",
             include_str!("../static/common.js"),
-            include_str!("../static/upload.html")
+            include_str!("../static/upload.html"),
+            include_str!("../static/app.js")
         );
         for unsupported in [
             "fetch(",

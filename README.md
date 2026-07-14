@@ -109,7 +109,8 @@ ExecStart=/path/to/kobo-library/target/release/kobo-library
 Environment=PORT=3001
 Environment=DATA_DIR=/path/to/kobo-library/data
 Environment=KEPUBIFY_BIN=/path/to/kobo-library/bin/kepubify
-Environment=MAX_UPLOAD_MB=800
+Environment=MAX_UPLOAD_MB=100
+Environment=CONVERSION_CONCURRENCY=2
 Restart=on-failure
 
 [Install]
@@ -143,13 +144,21 @@ Configuration is via environment variables:
 | `PORT` | `3001` | HTTP port to listen on. |
 | `DATA_DIR` | `./data` | Directory for metadata, uploads, and converted books. |
 | `KEPUBIFY_BIN` | `./bin/kepubify` if present, otherwise `kepubify` from `PATH` | Converter executable. |
-| `MAX_UPLOAD_MB` | `800` | Maximum request body size in MB. |
+| `MAX_UPLOAD_MB` | `100` | Maximum request body and converted EPUB size in MiB. |
+| `CONVERSION_CONCURRENCY` | `2` | Maximum simultaneous `kepubify` processes. |
 | `PUBLIC_BASE_URL` | unset | Authoritative HTTPS origin used in QR shelf URLs. Required for hosted deployment. |
 | `SHELF_ACCESS_CODE` | unset | Deployment-wide code required only to create shelves. Must be set for hosted deployment. |
 
 When `PUBLIC_BASE_URL` is set, startup rejects non-HTTPS URLs and requires
 `SHELF_ACCESS_CODE`. With no public base URL, request Host is used only for the
 ungated local-development flow.
+
+The MVP also fixes each shelf at 20 books and 500 MiB, with 10 GiB of ready
+books service-wide. EPUB archives are limited to 10,000 entries and 500 MiB of
+declared decompressed content. Conversion times out after five minutes. The
+process bounds concurrent uploads to eight and downloads to 32, and applies
+fixed-window limits to shelf creation and capability-scoped actions. Run only
+one application instance while these controls and SQLite storage are local.
 
 ## Data Layout
 
@@ -174,8 +183,12 @@ data/
 Existing `books.json` files are not detected or imported. This version starts
 with an empty SQLite library; retain an old data directory separately if needed.
 
-Keep `data/` if you want to preserve the library across rebuilds or service
-restarts.
+Shelf content is deliberately ephemeral and does not require backup. Back up
+deployment configuration, secrets through the platform's secret mechanism, and
+the source-controlled SQLite migrations. If operational recovery requires
+preserving live shelves across a host failure, snapshot the entire `DATA_DIR`
+consistently; restoring only the database or only the files can leave incomplete
+book states for startup reconciliation to discard.
 
 ## Development
 
@@ -196,6 +209,7 @@ src/
   config.rs      environment configuration
   routes.rs      HTTP routes and handlers
   library.rs     upload storage and conversion flow
+  observability.rs aggregate metrics and bounded rate limiting
   books.rs       book models and filename handling
   repository.rs SQLite shelf/book repositories and migrations
   shelves.rs    capability generation and shelf authorization
@@ -206,7 +220,8 @@ src/
 static/
   upload.html    single app page
   style.css      UI styling
-  common.js      upload, list, download, delete behavior
+  common.js      small shared browser helpers
+  app.js         upload, list, download, delete behavior
 ```
 
 ## Troubleshooting
@@ -249,6 +264,13 @@ mDNS requires same-network access, multicast UDP 5353, and client support for
 Shelf URLs are bearer credentials: anyone who has one can upload, download, and
 delete that shelf's books. Do not paste shelf URLs into logs or public issues.
 
-Capability isolation is implemented, but the resource controls and deployment
-hardening required by Phase 5 are not. Do not expose this version directly to
-the public internet.
+The application emits no HTTP access log and its metrics are aggregate and
+token-free. Configure the public proxy to disable access logging for `/s/*` (or
+redact the path to `/s/[capability]/*`) and never send those paths to analytics,
+error-reporting, or tracing vendors. Configure HTTPS-only traffic, a request
+body limit no larger than the application limit, persistent-volume capacity
+alerts, and alerts for cleanup failures/lag and storage approaching 10 GiB.
+
+`GET /metrics` is intentionally low-cardinality and contains no shelf or book
+metadata. It is rate-limited but not authenticated; restrict it at the hosting
+network or proxy if operational metrics should not be public.
