@@ -17,8 +17,15 @@ pub struct Shelf {
     pub id: String,
     pub token_hash: Vec<u8>,
     pub state: String,
+    pub revision: i64,
     pub expires_at: DateTime<Utc>,
     pub hard_expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct CleanupShelf {
+    pub id: String,
+    pub state: String,
 }
 
 #[async_trait]
@@ -38,6 +45,9 @@ pub trait ShelfRepository: Send + Sync {
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
     ) -> AppResult<()>;
+    async fn cleanup_candidates(&self, now: DateTime<Utc>) -> AppResult<Vec<CleanupShelf>>;
+    async fn claim_expiring(&self, shelf_id: &str, now: DateTime<Utc>) -> AppResult<bool>;
+    async fn delete_expiring(&self, shelf_id: &str) -> AppResult<()>;
 }
 
 #[async_trait]
@@ -232,7 +242,7 @@ impl ShelfRepository for Database {
     }
 
     async fn shelf_by_token_hash(&self, token_hash: &[u8]) -> AppResult<Option<Shelf>> {
-        sqlx::query_as("SELECT id, token_hash, state, expires_at, hard_expires_at FROM shelves WHERE token_hash = ?")
+        sqlx::query_as("SELECT id, token_hash, state, revision, expires_at, hard_expires_at FROM shelves WHERE token_hash = ?")
             .bind(token_hash).fetch_optional(&self.pool).await.map_err(AppError::internal)
     }
 
@@ -245,6 +255,26 @@ impl ShelfRepository for Database {
         sqlx::query("UPDATE shelves SET last_seen_at = ?, last_activity_at = ?, expires_at = ? WHERE id = ? AND state = 'active'")
             .bind(now).bind(now).bind(expires_at).bind(shelf_id)
             .execute(&self.pool).await.map_err(AppError::internal)?;
+        Ok(())
+    }
+
+    async fn cleanup_candidates(&self, now: DateTime<Utc>) -> AppResult<Vec<CleanupShelf>> {
+        sqlx::query_as("SELECT id, state FROM shelves WHERE state = 'expiring' OR (state = 'active' AND (expires_at <= ? OR hard_expires_at <= ?))")
+            .bind(now).bind(now).fetch_all(&self.pool).await.map_err(AppError::internal)
+    }
+
+    async fn claim_expiring(&self, shelf_id: &str, now: DateTime<Utc>) -> AppResult<bool> {
+        let changed = sqlx::query("UPDATE shelves SET state = 'expiring' WHERE id = ? AND state = 'active' AND (expires_at <= ? OR hard_expires_at <= ?)")
+            .bind(shelf_id).bind(now).bind(now).execute(&self.pool).await.map_err(AppError::internal)?.rows_affected() == 1;
+        Ok(changed)
+    }
+
+    async fn delete_expiring(&self, shelf_id: &str) -> AppResult<()> {
+        sqlx::query("DELETE FROM shelves WHERE id = ? AND state = 'expiring'")
+            .bind(shelf_id)
+            .execute(&self.pool)
+            .await
+            .map_err(AppError::internal)?;
         Ok(())
     }
 }

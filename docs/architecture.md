@@ -53,6 +53,12 @@ expiration is authoritative.
 Exact TTL and extension rules remain product configuration; tests should use an
 injectable clock rather than wall-clock sleeps.
 
+For the MVP, creation initializes all presence/activity timestamps. Canonical
+page entry, upload, download, and delete set both `last_seen_at` and
+`last_activity_at`, then extend `expires_at` by 12 hours without crossing the
+24-hour `hard_expires_at`. QR loads and conditional book polling update neither
+timestamp. A shelf is unavailable when the clock is equal to either deadline.
+
 ## Capability Model
 
 Opening `/` creates a shelf and redirects to a canonical shelf URL. The QR code
@@ -131,6 +137,13 @@ Return an ETag or revision and allow `304 Not Modified`. WebSockets and
 Server-Sent Events are not required for the MVP because older Kobo browsers are
 the compatibility baseline.
 
+Phase 3 polls the shelf snapshot every five seconds using XHR and
+`If-None-Match`. The snapshot contains the visible book revision, expiration
+timestamp, and shelf-scoped books. Its ETag contains both revision and
+expiration so explicit activity on another request can refresh the displayed
+deadline, while polling itself leaves the ETag and lifetime unchanged. Local
+mutations and window focus trigger an immediate conditional refresh.
+
 Derive public QR URLs from an explicit production base URL. Only trust forwarded
 host/protocol headers when the server is behind a configured trusted proxy.
 
@@ -149,6 +162,21 @@ Cleanup is a state transition, not merely a recursive delete:
 A periodic worker is sufficient for one instance. Its correctness must not
 depend on running at an exact interval. Also sweep stale upload files that were
 orphaned by crashes.
+
+Phase 4 runs one in-process worker every 60 seconds and once during startup.
+The worker and operation authorization share a lifecycle lock. Expired active
+shelves are atomically marked `expiring`; new operations then fail before book
+resolution. Started uploads/conversions and deletes defer the claim until their
+operation guard ends. Started downloads may continue through five minutes after
+the shelf deadline; after that deadline they no longer block cleanup and their
+next stream read terminates.
+
+Cleanup removes the shelf directory before deleting `expiring` metadata. Both
+steps are idempotent: filesystem failure leaves the claim for retry, and a
+database failure after file deletion retries against an already-absent
+directory. Startup reconciliation runs before cleanup, so interrupted book
+publication/deletion reaches a recoverable state first. Upload files older than
+one hour are swept independently, except in shelves with active operations.
 
 ## Public-Hosting Boundaries
 

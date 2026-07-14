@@ -33,6 +33,18 @@ h2 {
     line-height: 1.2;
 }
 
+.shelf-status {
+    margin: 0 0 14px;
+    color: #555;
+    font-size: 0.92em;
+    text-align: center;
+}
+
+.shelf-status.error {
+    color: #7c2626;
+    font-weight: bold;
+}
+
 a {
     color: #111;
 }

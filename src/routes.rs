@@ -1,4 +1,9 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::PathBuf,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use axum::{
     Form, Json, Router,
@@ -12,10 +17,13 @@ use axum::{
     routing::{delete, get, post},
 };
 use qrcode::{QrCode, render::svg};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
-use tokio::{fs::File, io::AsyncWriteExt};
+use tokio::{
+    fs::File,
+    io::{AsyncRead, AsyncWriteExt, ReadBuf},
+};
 use tokio_util::io::ReaderStream;
 use tower_http::services::ServeDir;
 use url::Url;
@@ -26,7 +34,7 @@ use crate::{
     error::{AppError, AppResult},
     library::{delete_book as delete_stored_book, store_upload},
     repository::{BookRepository, Database},
-    shelves::ShelfService,
+    shelves::{OperationGuard, OperationKind, ShelfService},
     storage::{Storage, remove_file_if_exists},
 };
 
@@ -43,6 +51,35 @@ pub struct AppState {
 #[derive(Deserialize)]
 struct CreateShelfForm {
     access_code: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShelfSnapshot {
+    revision: i64,
+    expires_at: chrono::DateTime<chrono::Utc>,
+    books: Vec<PublicBook>,
+}
+
+struct GuardedDownload {
+    file: File,
+    operation: OperationGuard,
+}
+
+impl AsyncRead for GuardedDownload {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        buffer: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        if self.operation.deadline_reached() {
+            return Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "download grace period ended",
+            )));
+        }
+        Pin::new(&mut self.file).poll_read(context, buffer)
+    }
 }
 
 pub fn router(state: AppState) -> Router {
@@ -96,10 +133,34 @@ async fn shelf_page(
 async fn list_books(
     State(state): State<AppState>,
     AxumPath(token): AxumPath<String>,
+    headers: HeaderMap,
 ) -> AppResult<Response> {
     let shelf = state.shelves.authorize(&token, false).await?;
+    let etag = format!("\"{}-{}\"", shelf.revision, shelf.expires_at.timestamp());
+    if headers
+        .get(axum::http::header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        == Some(etag.as_str())
+    {
+        let mut response = axum::http::StatusCode::NOT_MODIFIED.into_response();
+        response.headers_mut().insert(
+            axum::http::header::ETAG,
+            HeaderValue::from_str(&etag).map_err(AppError::internal)?,
+        );
+        add_private_headers(&mut response);
+        return Ok(response);
+    }
     let books = state.database.list_books(&shelf.id).await?;
-    private_response(Json(books.iter().map(PublicBook::from).collect::<Vec<_>>()))
+    let mut response = private_response(Json(ShelfSnapshot {
+        revision: shelf.revision,
+        expires_at: shelf.expires_at,
+        books: books.iter().map(PublicBook::from).collect(),
+    }))?;
+    response.headers_mut().insert(
+        axum::http::header::ETAG,
+        HeaderValue::from_str(&etag).map_err(AppError::internal)?,
+    );
+    Ok(response)
 }
 
 async fn qr_code(
@@ -130,7 +191,10 @@ async fn upload_book(
     AxumPath(token): AxumPath<String>,
     mut multipart: Multipart,
 ) -> AppResult<Response> {
-    let shelf = state.shelves.authorize(&token, true).await?;
+    let (shelf, _operation) = state
+        .shelves
+        .authorize_operation(&token, OperationKind::Mutation)
+        .await?;
     let mut saved_upload: Option<(PathBuf, String)> = None;
 
     while let Some(mut field) = multipart.next_field().await.map_err(AppError::internal)? {
@@ -186,7 +250,10 @@ async fn download_book(
     State(state): State<AppState>,
     AxumPath((token, id)): AxumPath<(String, String)>,
 ) -> AppResult<Response> {
-    let shelf = state.shelves.authorize(&token, true).await?;
+    let (shelf, operation) = state
+        .shelves
+        .authorize_operation(&token, OperationKind::Download)
+        .await?;
     let book = state
         .database
         .book(&shelf.id, &id)
@@ -199,7 +266,10 @@ async fn download_book(
         "attachment; filename=\"{}\"",
         header_safe_filename(&book.filename)
     );
-    let mut response = Response::new(Body::from_stream(ReaderStream::new(file)));
+    let mut response = Response::new(Body::from_stream(ReaderStream::new(GuardedDownload {
+        file,
+        operation,
+    })));
     response.headers_mut().insert(
         CONTENT_TYPE,
         HeaderValue::from_static("application/epub+zip"),
@@ -216,7 +286,10 @@ async fn delete_book(
     State(state): State<AppState>,
     AxumPath((token, id)): AxumPath<(String, String)>,
 ) -> AppResult<Response> {
-    let shelf = state.shelves.authorize(&token, true).await?;
+    let (shelf, _operation) = state
+        .shelves
+        .authorize_operation(&token, OperationKind::Mutation)
+        .await?;
     if !delete_stored_book(state.database.as_ref(), &state.storage, &shelf.id, &id).await? {
         return Err(AppError::not_found("Book not found"));
     }
@@ -429,7 +502,8 @@ mod tests {
             .unwrap();
         assert_eq!(other_list.status(), StatusCode::OK);
         let body = other_list.into_body().collect().await.unwrap().to_bytes();
-        assert_eq!(body.as_ref(), b"[]");
+        let snapshot: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(snapshot["books"], serde_json::json!([]));
 
         let other_delete = app
             .oneshot(
@@ -450,5 +524,105 @@ mod tests {
                 .is_some()
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn unchanged_poll_returns_304_and_mutation_changes_etag() {
+        let (app, database, _, first_token, _, root) = test_app().await;
+        let first = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/s/{first_token}/api/books"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        let initial_etag = first.headers().get("etag").unwrap().clone();
+
+        let unchanged = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/s/{first_token}/api/books"))
+                    .header("if-none-match", initial_etag.clone())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unchanged.status(), StatusCode::NOT_MODIFIED);
+
+        let hash = Sha256::digest(first_token.as_bytes()).to_vec();
+        let shelf = database.shelf_by_token_hash(&hash).await.unwrap().unwrap();
+        let book_id = Uuid::new_v4().to_string();
+        database
+            .insert_pending(&Book {
+                id: book_id.clone(),
+                shelf_id: shelf.id.clone(),
+                status: "pending".to_string(),
+                title: "Synced book".to_string(),
+                author: None,
+                filename: "Synced.kepub.epub".to_string(),
+                original_name: "Synced.epub".to_string(),
+                stored_filename: format!("{book_id}.kepub.epub"),
+                size: 0,
+                uploaded_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+        database
+            .finalize_book(&shelf.id, &book_id, 10)
+            .await
+            .unwrap();
+
+        let changed = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/s/{first_token}/api/books"))
+                    .header("if-none-match", initial_etag)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(changed.status(), StatusCode::OK);
+        assert!(
+            changed
+                .headers()
+                .get("etag")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("\"1-")
+        );
+        let body = changed.into_body().collect().await.unwrap().to_bytes();
+        let snapshot: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(snapshot["revision"], 1);
+        assert_eq!(snapshot["books"][0]["title"], "Synced book");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn critical_frontend_avoids_modern_only_javascript() {
+        let javascript = format!(
+            "{}\n{}",
+            include_str!("../static/common.js"),
+            include_str!("../static/upload.html")
+        );
+        for unsupported in [
+            "fetch(",
+            "Promise",
+            "WebSocket",
+            "=>",
+            ".endsWith(",
+            "const ",
+            "let ",
+            "async ",
+        ] {
+            assert!(!javascript.contains(unsupported), "found {unsupported}");
+        }
     }
 }

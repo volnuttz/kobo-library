@@ -32,6 +32,18 @@ async fn main() -> anyhow::Result<()> {
         storage.clone(),
         Arc::new(SystemClock),
     ));
+    shelves.cleanup_once().await?;
+    let cleanup_service = shelves.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            if let Err(error) = cleanup_service.cleanup_once().await {
+                eprintln!("shelf cleanup failed: {error}");
+            }
+        }
+    });
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     let app = routes::router(AppState {

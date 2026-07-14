@@ -17,6 +17,11 @@ is an unguessable bearer capability; there are no user accounts.
 - Persistent SQLite metadata and shelf-scoped files stored under `data/`.
 - QR code for the current page, useful when the page is open on the Kobo and you
   want to open it on a phone.
+- Low-cost conditional polling keeps joined devices synchronized without
+  WebSockets or manual page refreshes.
+- Clear empty, retry, upload, expiration, and unavailable-shelf states.
+- Twelve-hour inactivity expiration with a 24-hour maximum lifetime and
+  automatic retryable cleanup.
 - Rust/Axum server with a single compiled binary.
 - systemd user service support.
 
@@ -163,6 +168,8 @@ data/
 - Each shelf has isolated `books/` and temporary `uploads/` directories.
 - Capabilities are not used in storage paths and plaintext capabilities are not
   stored in SQLite.
+- Expired shelf directories and metadata are reclaimed by the cleanup worker;
+  abandoned upload files are swept after one hour.
 
 Existing `books.json` files are not detected or imported. This version starts
 with an empty SQLite library; retain an old data directory separately if needed.

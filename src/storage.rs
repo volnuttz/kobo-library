@@ -1,5 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
+use chrono::{DateTime, Utc};
 use tokio::fs;
 use uuid::Uuid;
 
@@ -36,6 +40,71 @@ impl Storage {
         Ok(self
             .books_dir(shelf_id)?
             .join(format!("{book_id}.kepub.epub")))
+    }
+
+    pub async fn remove_shelf(&self, shelf_id: &str) -> AppResult<()> {
+        let path = self.shelf_dir(shelf_id)?;
+        match fs::remove_dir_all(path).await {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(AppError::internal(error)),
+        }
+    }
+
+    pub async fn sweep_stale_uploads(
+        &self,
+        cutoff: DateTime<Utc>,
+        busy_shelves: &HashSet<String>,
+    ) -> AppResult<u64> {
+        let mut removed = 0;
+        let mut shelves = match fs::read_dir(&self.shelves_dir).await {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(error) => return Err(AppError::internal(error)),
+        };
+        while let Some(shelf) = shelves.next_entry().await.map_err(AppError::internal)? {
+            if !shelf
+                .file_type()
+                .await
+                .map_err(AppError::internal)?
+                .is_dir()
+            {
+                continue;
+            }
+            if shelf
+                .file_name()
+                .to_str()
+                .is_some_and(|name| busy_shelves.contains(name))
+            {
+                continue;
+            }
+            let mut uploads = match fs::read_dir(shelf.path().join("uploads")).await {
+                Ok(entries) => entries,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(AppError::internal(error)),
+            };
+            while let Some(upload) = uploads.next_entry().await.map_err(AppError::internal)? {
+                if !upload
+                    .file_type()
+                    .await
+                    .map_err(AppError::internal)?
+                    .is_file()
+                {
+                    continue;
+                }
+                let modified = upload
+                    .metadata()
+                    .await
+                    .map_err(AppError::internal)?
+                    .modified()
+                    .map_err(AppError::internal)?;
+                if modified <= std::time::SystemTime::from(cutoff) {
+                    remove_file_if_exists(&upload.path()).await?;
+                    removed += 1;
+                }
+            }
+        }
+        Ok(removed)
     }
 
     fn shelf_dir(&self, shelf_id: &str) -> AppResult<PathBuf> {

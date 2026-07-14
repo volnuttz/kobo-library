@@ -85,13 +85,13 @@ ADR-009 creation form without putting that code in shelf URLs.
 
 ## Phase 3 — Shared Device Experience
 
-- [ ] Scope upload, list, download, and delete UI actions to the current shelf.
-- [ ] Add low-cost polling compatible with the Kobo browser.
-- [ ] Add a shelf revision or ETag so unchanged polling is inexpensive.
-- [ ] Refresh immediately after local mutations and when a page regains focus.
-- [ ] Display shelf expiration and useful empty, expired, upload, and conversion
+- [x] Scope upload, list, download, and delete UI actions to the current shelf.
+- [x] Add low-cost polling compatible with the Kobo browser.
+- [x] Add a shelf revision or ETag so unchanged polling is inexpensive.
+- [x] Refresh immediately after local mutations and when a page regains focus.
+- [x] Display shelf expiration and useful empty, expired, upload, and conversion
   states.
-- [ ] Verify ES5-era JavaScript and avoid relying on WebSockets or modern browser
+- [x] Verify ES5-era JavaScript and avoid relying on WebSockets or modern browser
   APIs for the critical flow.
 - [ ] Run the end-to-end two-device test: Kobo creates, phone joins/uploads, Kobo
   sees/downloads, either device deletes.
@@ -99,21 +99,33 @@ ADR-009 creation form without putting that code in shelf URLs.
 Exit criteria: the complete QR-assisted workflow works across two devices,
 including at least one target Kobo.
 
+Phase 3 software work includes five-second conditional XHR polling, stable
+`304` responses, immediate mutation/focus refresh, expiration and failure UI,
+and automated two-client synchronization/isolation coverage. Static checks
+reject modern-only JavaScript primitives in the critical flow. The physical
+Kobo end-to-end checklist remains required before this phase can exit.
+
 ## Phase 4 — Expiration and Garbage Collection
 
-- [ ] Define `last_seen_at`, `last_activity_at`, `expires_at`, and maximum lifetime
+- [x] Define `last_seen_at`, `last_activity_at`, `expires_at`, and maximum lifetime
   semantics in code and documentation.
-- [ ] Ensure background polling alone cannot preserve a shelf forever.
-- [ ] Add an explicit lifecycle state for active/expiring shelves.
-- [ ] Implement a periodic cleanup worker with a single-runner strategy.
-- [ ] Make cleanup idempotent and safe to retry after partial failure or restart.
-- [ ] Prevent new mutations after expiration begins.
-- [ ] Handle active downloads and conversions during expiration.
-- [ ] Remove abandoned temporary uploads independently of shelf cleanup.
-- [ ] Add deterministic clock-based tests around expiry boundaries and retries.
+- [x] Ensure background polling alone cannot preserve a shelf forever.
+- [x] Add an explicit lifecycle state for active/expiring shelves.
+- [x] Implement a periodic cleanup worker with a single-runner strategy.
+- [x] Make cleanup idempotent and safe to retry after partial failure or restart.
+- [x] Prevent new mutations after expiration begins.
+- [x] Handle active downloads and conversions during expiration.
+- [x] Remove abandoned temporary uploads independently of shelf cleanup.
+- [x] Add deterministic clock-based tests around expiry boundaries and retries.
 
 Exit criteria: expired shelves become inaccessible and all associated storage is
 eventually reclaimed, including across process restarts.
+
+Phase 4 completed with exact deterministic deadline semantics, guarded active
+operations, atomic `active` to `expiring` claims, a single periodic worker,
+restart-safe idempotent cleanup, five-minute download grace enforcement, and an
+independent one-hour abandoned-upload sweep. Cleanup/retry tests use an injected
+clock and do not sleep.
 
 ## Phase 5 — Internet Hardening
 
