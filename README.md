@@ -16,7 +16,7 @@ accounts.
   [kepubify](https://github.com/pgaskin/kepubify).
 - Existing kepubs are detected and stored without running `kepubify` again.
 - EPUB metadata extraction for title and author.
-- Persistent local library stored under `data/`.
+- Persistent SQLite metadata and shelf-scoped files stored under `data/`.
 - QR code for the current page, useful when the page is open on the Kobo and you
   want to open it on a phone.
 - Rust/Axum server with a single compiled binary.
@@ -146,14 +146,20 @@ Runtime data lives under `DATA_DIR`:
 
 ```text
 data/
-  books.json
-  books/
-  uploads/
+  library.sqlite3
+  shelves/
+    00000000-0000-4000-8000-000000000001/
+      books/
+      uploads/
 ```
 
-- `books.json` stores library metadata.
-- `books/` stores the downloadable `.kepub.epub` files.
-- `uploads/` stores temporary upload files while processing.
+- `library.sqlite3` stores shelf and book metadata and is migrated at startup.
+- Each shelf has isolated `books/` and temporary `uploads/` directories.
+- The fixed shelf shown above preserves the trusted-network UI until capability
+  shelves replace it in Phase 2.
+
+Existing `books.json` files are not detected or imported. This version starts
+with an empty SQLite library; retain an old data directory separately if needed.
 
 Keep `data/` if you want to preserve the library across rebuilds or service
 restarts.
@@ -177,7 +183,9 @@ src/
   config.rs      environment configuration
   routes.rs      HTTP routes and handlers
   library.rs     upload storage and conversion flow
-  books.rs       metadata persistence and public book models
+  books.rs       book models and filename handling
+  repository.rs SQLite shelf/book repositories and migrations
+  storage.rs     shelf-scoped filesystem paths
   epub.rs        EPUB metadata and kepub detection
   conversion.rs  kepubify wrapper
   error.rs       HTTP error mapping

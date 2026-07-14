@@ -15,18 +15,21 @@ use qrcode::{QrCode, render::svg};
 use tokio::{fs::File, io::AsyncWriteExt};
 use tokio_util::io::ReaderStream;
 use tower_http::services::ServeDir;
-use uuid::Uuid;
 
 use crate::{
-    books::{header_safe_filename, public_books, read_books, remove_file_if_exists, write_books},
+    books::{PublicBook, header_safe_filename},
     config::Config,
     error::{AppError, AppResult},
-    library::store_upload,
+    library::{delete_book as delete_stored_book, store_upload},
+    repository::{BookRepository, Database, LOCAL_SHELF_ID},
+    storage::{Storage, remove_file_if_exists},
 };
 
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
+    pub database: Arc<Database>,
+    pub storage: Arc<Storage>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -49,7 +52,8 @@ async fn upload_page() -> Html<&'static str> {
 async fn list_books(
     State(state): State<AppState>,
 ) -> AppResult<Json<Vec<crate::books::PublicBook>>> {
-    Ok(Json(public_books(&state.config).await?))
+    let books = state.database.list_books(LOCAL_SHELF_ID).await?;
+    Ok(Json(books.iter().map(PublicBook::from).collect()))
 }
 
 async fn qr_code(
@@ -162,10 +166,7 @@ async fn upload_book(State(state): State<AppState>, mut multipart: Multipart) ->
             return Err(AppError::bad_request("Only EPUB files are supported."));
         }
 
-        let upload_path = state
-            .config
-            .uploads_dir
-            .join(format!("upload-{}.epub", Uuid::new_v4()));
+        let upload_path = state.storage.new_upload_path(LOCAL_SHELF_ID)?;
         let mut file = File::create(&upload_path)
             .await
             .map_err(AppError::internal)?;
@@ -190,7 +191,15 @@ async fn upload_book(State(state): State<AppState>, mut multipart: Multipart) ->
     let (upload_path, original_name, _) =
         saved_upload.ok_or_else(|| AppError::bad_request("Choose an EPUB file first."))?;
 
-    let result = store_upload(&state.config, &upload_path, &original_name).await;
+    let result = store_upload(
+        &state.config,
+        state.database.as_ref(),
+        &state.storage,
+        LOCAL_SHELF_ID,
+        &upload_path,
+        &original_name,
+    )
+    .await;
     if result.is_err() {
         let _ = remove_file_if_exists(&upload_path).await;
     }
@@ -203,12 +212,12 @@ async fn download_book(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> AppResult<Response> {
-    let books = read_books(&state.config).await?;
-    let book = books
-        .iter()
-        .find(|book| book.id == id)
+    let book = state
+        .database
+        .book(LOCAL_SHELF_ID, &id)
+        .await?
         .ok_or_else(|| AppError::not_found("Book not found"))?;
-    let path = state.config.books_dir.join(&book.stored_filename);
+    let path = state.storage.book_path(LOCAL_SHELF_ID, &book.id)?;
     let file = File::open(path).await.map_err(AppError::internal)?;
     let stream = ReaderStream::new(file);
 
@@ -231,15 +240,9 @@ async fn delete_book(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let mut books = read_books(&state.config).await?;
-    let index = books
-        .iter()
-        .position(|book| book.id == id)
-        .ok_or_else(|| AppError::not_found("Book not found"))?;
-    let book = books.remove(index);
-
-    remove_file_if_exists(&state.config.books_dir.join(book.stored_filename)).await?;
-    write_books(&state.config, &books).await?;
+    if !delete_stored_book(state.database.as_ref(), &state.storage, LOCAL_SHELF_ID, &id).await? {
+        return Err(AppError::not_found("Book not found"));
+    }
 
     Ok(Json(serde_json::json!({ "ok": true })))
 }

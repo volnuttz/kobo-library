@@ -6,9 +6,8 @@ use std::{
 pub struct Config {
     pub port: u16,
     pub data_dir: PathBuf,
-    pub books_dir: PathBuf,
-    pub uploads_dir: PathBuf,
-    pub metadata_path: PathBuf,
+    pub database_path: PathBuf,
+    pub shelves_dir: PathBuf,
     pub kepubify_bin: PathBuf,
     pub max_upload_bytes: usize,
 }
@@ -40,9 +39,8 @@ impl Config {
 
         Self {
             port,
-            books_dir: data_dir.join("books"),
-            uploads_dir: data_dir.join("uploads"),
-            metadata_path: data_dir.join("books.json"),
+            database_path: data_dir.join("library.sqlite3"),
+            shelves_dir: data_dir.join("shelves"),
             data_dir,
             kepubify_bin,
             max_upload_bytes: max_upload_mb * 1024 * 1024,

@@ -1,8 +1,9 @@
 # Trusted-Network Baseline
 
-This records the behavior being replaced by the ephemeral-shelf roadmap. It is
-a refactoring baseline, not approval to expose the current application to the
-internet.
+This records the trusted-network behavior captured before the ephemeral-shelf
+refactor. It is a historical refactoring baseline, not a description of the
+current persistence implementation and not approval to expose the application
+to the internet.
 
 ## Current Behavior
 

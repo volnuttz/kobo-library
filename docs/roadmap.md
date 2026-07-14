@@ -42,18 +42,24 @@ requirement; defining the repeatable checklist is the Phase 0 deliverable.
 
 ## Phase 1 — Persistence Foundation
 
-- [ ] Introduce SQLite and a migration mechanism.
-- [ ] Add `shelves` and `books` tables with foreign keys and timestamps.
-- [ ] Create repository interfaces for shelf and book operations.
-- [ ] Move metadata from the global `books.json` file to SQLite.
-- [ ] Store files under shelf-specific directories.
-- [ ] Make book creation/deletion resilient to metadata/file operation failures.
-- [ ] Add tests for concurrent mutations and shelf isolation.
-- [ ] Define migration behavior for an existing local library, or explicitly
+- [x] Introduce SQLite and a migration mechanism.
+- [x] Add `shelves` and `books` tables with foreign keys and timestamps.
+- [x] Create repository interfaces for shelf and book operations.
+- [x] Move metadata from the global `books.json` file to SQLite.
+- [x] Store files under shelf-specific directories.
+- [x] Make book creation/deletion resilient to metadata/file operation failures.
+- [x] Add tests for concurrent mutations and shelf isolation.
+- [x] Define migration behavior for an existing local library, or explicitly
   document that the hosted mode starts clean.
 
 Exit criteria: metadata supports multiple isolated shelves, survives restart,
 and no route needs to read or rewrite a global JSON collection.
+
+Phase 1 completed with embedded SQLite migrations, shelf/book repositories,
+shelf-scoped paths, recoverable book publication/deletion states, and startup
+reconciliation. The transitional trusted-network routes use one internal
+compatibility shelf until Phase 2 adds capability authorization. Deployments
+always start clean; `books.json` is neither detected nor imported.
 
 ## Phase 2 — Shelf Lifecycle and Capability Access
 

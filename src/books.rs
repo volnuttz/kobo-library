@@ -1,25 +1,18 @@
-use std::{cmp::Reverse, path::Path};
-
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use tokio::fs;
+use serde::Serialize;
+use sqlx::FromRow;
 
-use crate::{
-    config::Config,
-    error::{AppError, AppResult},
-};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, FromRow, PartialEq, Eq)]
 pub struct Book {
     pub id: String,
+    pub shelf_id: String,
+    pub status: String,
     pub title: String,
-    #[serde(default)]
     pub author: Option<String>,
     pub filename: String,
     pub original_name: String,
     pub stored_filename: String,
-    pub size: u64,
+    pub size: i64,
     pub uploaded_at: DateTime<Utc>,
 }
 
@@ -40,40 +33,6 @@ impl From<&Book> for PublicBook {
             author: book.author.clone(),
             download_url: format!("/books/{}/download", book.id),
         }
-    }
-}
-
-pub async fn public_books(config: &Config) -> AppResult<Vec<PublicBook>> {
-    let mut books = read_books(config).await?;
-    books.sort_by_key(|book| Reverse(book.uploaded_at));
-    Ok(books.iter().map(PublicBook::from).collect())
-}
-
-pub async fn read_books(config: &Config) -> AppResult<Vec<Book>> {
-    match fs::read_to_string(&config.metadata_path).await {
-        Ok(data) => serde_json::from_str(&data).map_err(AppError::internal),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(err) => Err(AppError::internal(err)),
-    }
-}
-
-pub async fn write_books(config: &Config, books: &[Book]) -> AppResult<()> {
-    let tmp_path = config.metadata_path.with_extension("json.tmp");
-    let data = serde_json::to_string_pretty(books).map_err(AppError::internal)?;
-    fs::write(&tmp_path, format!("{data}\n"))
-        .await
-        .map_err(AppError::internal)?;
-    fs::rename(tmp_path, &config.metadata_path)
-        .await
-        .map_err(AppError::internal)?;
-    Ok(())
-}
-
-pub async fn remove_file_if_exists(path: &Path) -> AppResult<()> {
-    match fs::remove_file(path).await {
-        Ok(()) => Ok(()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(err) => Err(AppError::internal(err)),
     }
 }
 
@@ -121,36 +80,6 @@ fn sanitize_filename(filename: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-
-    fn test_config(data_dir: PathBuf) -> Config {
-        Config {
-            port: 3001,
-            books_dir: data_dir.join("books"),
-            uploads_dir: data_dir.join("uploads"),
-            metadata_path: data_dir.join("books.json"),
-            data_dir,
-            kepubify_bin: PathBuf::from("kepubify"),
-            max_upload_bytes: 800 * 1024 * 1024,
-        }
-    }
-
-    fn sample_book() -> Book {
-        Book {
-            id: "book-id".to_string(),
-            title: "A Book".to_string(),
-            author: Some("An Author".to_string()),
-            filename: "A Book.kepub.epub".to_string(),
-            original_name: "A Book.epub".to_string(),
-            stored_filename: "book-id-A Book.kepub.epub".to_string(),
-            size: 123,
-            uploaded_at: "2026-01-02T03:04:05Z".parse().unwrap(),
-        }
-    }
-
-    fn temp_data_dir() -> PathBuf {
-        std::env::temp_dir().join(format!("kobo-library-test-{}", uuid::Uuid::new_v4()))
-    }
 
     #[test]
     fn converts_epub_filename_to_kepub() {
@@ -165,34 +94,5 @@ mod tests {
     #[test]
     fn removes_header_unsafe_characters() {
         assert_eq!(header_safe_filename("bad\"\\\r\n.epub"), "bad____.epub");
-    }
-
-    #[tokio::test]
-    async fn missing_metadata_is_an_empty_library() {
-        let data_dir = temp_data_dir();
-        let config = test_config(data_dir);
-
-        assert!(read_books(&config).await.unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn metadata_round_trips_through_json() {
-        let data_dir = temp_data_dir();
-        std::fs::create_dir_all(&data_dir).unwrap();
-        let config = test_config(data_dir.clone());
-        let expected = sample_book();
-
-        write_books(&config, std::slice::from_ref(&expected))
-            .await
-            .unwrap();
-        let actual = read_books(&config).await.unwrap();
-
-        assert_eq!(actual.len(), 1);
-        assert_eq!(actual[0].id, expected.id);
-        assert_eq!(actual[0].title, expected.title);
-        assert_eq!(actual[0].author, expected.author);
-        assert_eq!(actual[0].stored_filename, expected.stored_filename);
-        assert_eq!(actual[0].size, expected.size);
-        std::fs::remove_dir_all(data_dir).unwrap();
     }
 }

@@ -81,7 +81,8 @@ logical schema:
 ```text
 shelves(id, token_hash, state, revision, created_at, last_seen_at,
         last_activity_at, expires_at, hard_expires_at)
-books(id, shelf_id, title, author, filename, stored_filename, size, uploaded_at)
+books(id, shelf_id, status, title, author, filename, stored_filename, size,
+      uploaded_at)
 ```
 
 Store files below a server-generated shelf path:
@@ -97,6 +98,16 @@ value. Stream request and response bodies.
 File and database operations cannot share one atomic transaction. Design them as
 recoverable state transitions: use temporary files, publish only completed
 books, compensate on failure, and let reconciliation remove orphans.
+
+Phase 1 implements `pending`, `ready`, and `deleting` book states. Only `ready`
+books are visible. Startup reconciliation finalizes a `pending` book when its
+published file exists, removes its metadata when the file does not exist, and
+retries file and metadata removal for `deleting` books.
+
+Until Phase 2 introduces capability-scoped routes, existing trusted-network
+routes select one server-generated compatibility shelf. Repository operations
+are already shelf-scoped; the compatibility shelf is not an authorization
+mechanism and must not be exposed publicly.
 
 ## HTTP and Synchronization
 
@@ -156,4 +167,3 @@ The MVP assumes one process owns local SQLite and files. Before adding multiple
 instances, replace local storage with shared object storage, use a shared
 database, and introduce distributed cleanup/conversion coordination. Do not put
 multiple independent instances in front of the same local data directory.
-
