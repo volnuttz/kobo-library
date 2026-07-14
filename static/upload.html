@@ -4,6 +4,7 @@
 	<title>Kobo Library</title>
 	<meta charset="utf-8"/>
 	<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+	<meta name="referrer" content="no-referrer"/>
 	<link rel="stylesheet" type="text/css" href="/static/style.css"/>
 	<script src="/static/common.js"></script>
 </head>
@@ -12,10 +13,10 @@
 	<h1>Kobo Library</h1>
 
 	<section class="qr-panel">
-		<img class="qr-code" src="/qr/page.svg" alt="QR code for this page"/>
+		<img class="qr-code" src="qr/page.svg" alt="QR code for this page"/>
 	</section>
 
-	<form action="/upload" method="post" enctype="multipart/form-data" id="uploadform" class="upload-panel">
+	<form action="upload" method="post" enctype="multipart/form-data" id="uploadform" class="upload-panel">
 		<div class="file-row">
 			<label for="fileinput" id="choosebtn">Choose EPUB</label>
 			<input type="file" name="file" id="fileinput" accept=".epub,application/epub+zip,application/epub"/>
@@ -30,7 +31,7 @@
 		<div id="books" class="book-list"></div>
 	</section>
 
-	<p class="note">This server is meant for a trusted local network. Converted books are stored on this machine.</p>
+	<p class="note">Anyone with this shelf URL can manage its books. Do not share it publicly.</p>
 </main>
 
 <script>
@@ -80,7 +81,7 @@ function fileinputChange () {
 }
 
 function loadBooks () {
-	xhr('GET', '/api/books', function (req) {
+	xhr('GET', 'api/books', function (req) {
 		var books = []
 		try {
 			books = JSON.parse(req.responseText)
@@ -110,7 +111,7 @@ function loadBooks () {
 			remove.textContent = 'Delete'
 			remove.onclick = function () {
 				if (!confirm('Delete ' + (book.title || 'this book') + '?')) return
-				xhr('DELETE', '/api/books/' + encodeURIComponent(book.id), loadBooks)
+				xhr('DELETE', 'api/books/' + encodeURIComponent(book.id), loadBooks)
 			}
 
 			var download = document.createElement('a')

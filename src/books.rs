@@ -31,7 +31,7 @@ impl From<&Book> for PublicBook {
             id: book.id.clone(),
             title: book.title.clone(),
             author: book.author.clone(),
-            download_url: format!("/books/{}/download", book.id),
+            download_url: format!("books/{}/download", book.id),
         }
     }
 }

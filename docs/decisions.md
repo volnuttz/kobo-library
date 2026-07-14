@@ -66,6 +66,10 @@ code must not appear in that URL. The deployment owner owns and rotates the
 code. Revisit fully public creation after rate limits and operational metrics
 have been proven under real traffic.
 
+Implementation note: setting `SHELF_ACCESS_CODE` enables the gate. Leaving it
+unset is an explicit local-development mode in which `GET /` creates a shelf
+immediately; hosted deployment configuration must set it.
+
 ### ADR-010: The first deployment uses one Fly.io Machine and managed HTTPS
 
 The first hosted environment is one Fly.io Machine, one persistent volume for

@@ -1,5 +1,8 @@
 use axum::{
-    http::StatusCode,
+    http::{
+        HeaderValue, StatusCode,
+        header::{CACHE_CONTROL, REFERRER_POLICY},
+    },
     response::{IntoResponse, Response},
 };
 
@@ -44,6 +47,13 @@ impl AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        (self.status, self.message).into_response()
+        let mut response = (self.status, self.message).into_response();
+        response
+            .headers_mut()
+            .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        response
+            .headers_mut()
+            .insert(REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+        response
     }
 }

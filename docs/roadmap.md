@@ -63,19 +63,25 @@ always start clean; `books.json` is neither detected nor imported.
 
 ## Phase 2 — Shelf Lifecycle and Capability Access
 
-- [ ] Create a shelf service with cryptographically random capability tokens.
-- [ ] Store only a token hash where practical and use constant-time comparison.
-- [ ] Make `GET /` create a shelf and redirect to its canonical URL.
-- [ ] Add shelf-scoped page and API routes.
-- [ ] Generate a QR code for the current shelf URL using the configured public
+- [x] Create a shelf service with cryptographically random capability tokens.
+- [x] Store only a token hash where practical and use constant-time comparison.
+- [x] Make `GET /` create a shelf and redirect to its canonical URL.
+- [x] Add shelf-scoped page and API routes.
+- [x] Generate a QR code for the current shelf URL using the configured public
   base URL or trusted proxy information.
-- [ ] Return a consistent expired/not-found response without leaking shelf
+- [x] Return a consistent expired/not-found response without leaking shelf
   existence unnecessarily.
-- [ ] Ensure logs and errors redact shelf capabilities.
-- [ ] Add tests proving a token cannot read or mutate another shelf.
+- [x] Ensure logs and errors redact shelf capabilities.
+- [x] Add tests proving a token cannot read or mutate another shelf.
 
 Exit criteria: two independently created shelves remain isolated and QR joining
 grants access to exactly one shelf.
+
+Phase 2 completed with 256-bit URL-safe capabilities, hash-only persistence,
+constant-time verification, capability-scoped routes, explicit QR base URLs,
+uniform unavailable-shelf responses, and HTTP-level cross-shelf denial tests.
+Ungated local mode creates on `GET /`; setting `SHELF_ACCESS_CODE` enables the
+ADR-009 creation form without putting that code in shelf URLs.
 
 ## Phase 3 — Shared Device Experience
 

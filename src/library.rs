@@ -132,6 +132,20 @@ mod tests {
     use super::*;
     use crate::repository::{Database, ShelfRepository};
 
+    async fn create_test_shelf(database: &Database, shelf_id: &str) {
+        let now = Utc::now();
+        database
+            .create_shelf(
+                shelf_id,
+                Uuid::new_v4().as_bytes(),
+                now,
+                now + chrono::Duration::hours(12),
+                now + chrono::Duration::hours(24),
+            )
+            .await
+            .unwrap();
+    }
+
     fn pending_book(shelf_id: &str, book_id: &str, status: &str) -> Book {
         Book {
             id: book_id.to_string(),
@@ -154,7 +168,7 @@ mod tests {
         let storage = Storage::new(root.clone());
         let shelf_id = Uuid::new_v4().to_string();
         let book_id = Uuid::new_v4().to_string();
-        database.create_shelf(&shelf_id, Utc::now()).await.unwrap();
+        create_test_shelf(&database, &shelf_id).await;
         storage.prepare_shelf(&shelf_id).await.unwrap();
         database
             .insert_pending(&pending_book(&shelf_id, &book_id, "pending"))
@@ -184,7 +198,7 @@ mod tests {
         let storage = Storage::new(root.clone());
         let shelf_id = Uuid::new_v4().to_string();
         let book_id = Uuid::new_v4().to_string();
-        database.create_shelf(&shelf_id, Utc::now()).await.unwrap();
+        create_test_shelf(&database, &shelf_id).await;
         storage.prepare_shelf(&shelf_id).await.unwrap();
         database
             .insert_pending(&pending_book(&shelf_id, &book_id, "pending"))

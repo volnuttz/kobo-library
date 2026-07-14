@@ -12,11 +12,32 @@ use crate::{
     error::{AppError, AppResult},
 };
 
-pub const LOCAL_SHELF_ID: &str = "00000000-0000-4000-8000-000000000001";
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct Shelf {
+    pub id: String,
+    pub token_hash: Vec<u8>,
+    pub state: String,
+    pub expires_at: DateTime<Utc>,
+    pub hard_expires_at: DateTime<Utc>,
+}
 
 #[async_trait]
 pub trait ShelfRepository: Send + Sync {
-    async fn create_shelf(&self, id: &str, now: DateTime<Utc>) -> AppResult<()>;
+    async fn create_shelf(
+        &self,
+        id: &str,
+        token_hash: &[u8],
+        now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+        hard_expires_at: DateTime<Utc>,
+    ) -> AppResult<()>;
+    async fn shelf_by_token_hash(&self, token_hash: &[u8]) -> AppResult<Option<Shelf>>;
+    async fn touch_activity(
+        &self,
+        shelf_id: &str,
+        now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> AppResult<()>;
 }
 
 #[async_trait]
@@ -79,6 +100,20 @@ mod tests {
     use super::*;
     use uuid::Uuid;
 
+    async fn create_test_shelf(database: &Database, shelf_id: &str) {
+        let now = Utc::now();
+        database
+            .create_shelf(
+                shelf_id,
+                Uuid::new_v4().as_bytes(),
+                now,
+                now + chrono::Duration::hours(12),
+                now + chrono::Duration::hours(24),
+            )
+            .await
+            .unwrap();
+    }
+
     fn pending_book(shelf_id: &str, book_id: &str) -> Book {
         Book {
             id: book_id.to_string(),
@@ -99,8 +134,8 @@ mod tests {
         let database = Database::memory().await.unwrap();
         let shelf_a = Uuid::new_v4().to_string();
         let shelf_b = Uuid::new_v4().to_string();
-        database.create_shelf(&shelf_a, Utc::now()).await.unwrap();
-        database.create_shelf(&shelf_b, Utc::now()).await.unwrap();
+        create_test_shelf(&database, &shelf_a).await;
+        create_test_shelf(&database, &shelf_b).await;
         let book_id = Uuid::new_v4().to_string();
         database
             .insert_pending(&pending_book(&shelf_a, &book_id))
@@ -127,7 +162,7 @@ mod tests {
     async fn concurrent_book_publications_do_not_lose_updates() {
         let database = Database::memory().await.unwrap();
         let shelf_id = Uuid::new_v4().to_string();
-        database.create_shelf(&shelf_id, Utc::now()).await.unwrap();
+        create_test_shelf(&database, &shelf_id).await;
         let first_id = Uuid::new_v4().to_string();
         let second_id = Uuid::new_v4().to_string();
         let first = pending_book(&shelf_id, &first_id);
@@ -161,7 +196,7 @@ mod tests {
         let shelf_id = Uuid::new_v4().to_string();
         {
             let database = Database::open(&path).await.unwrap();
-            database.create_shelf(&shelf_id, Utc::now()).await.unwrap();
+            create_test_shelf(&database, &shelf_id).await;
             database.pool.close().await;
         }
         {
@@ -182,11 +217,33 @@ mod tests {
 
 #[async_trait]
 impl ShelfRepository for Database {
-    async fn create_shelf(&self, id: &str, now: DateTime<Utc>) -> AppResult<()> {
-        let expires = now + chrono::Duration::hours(12);
-        let hard_expires = now + chrono::Duration::hours(24);
-        sqlx::query("INSERT OR IGNORE INTO shelves (id, token_hash, state, revision, created_at, last_seen_at, last_activity_at, expires_at, hard_expires_at) VALUES (?, X'00', 'active', 0, ?, ?, ?, ?, ?)")
-            .bind(id).bind(now).bind(now).bind(now).bind(expires).bind(hard_expires)
+    async fn create_shelf(
+        &self,
+        id: &str,
+        token_hash: &[u8],
+        now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+        hard_expires_at: DateTime<Utc>,
+    ) -> AppResult<()> {
+        sqlx::query("INSERT INTO shelves (id, token_hash, state, revision, created_at, last_seen_at, last_activity_at, expires_at, hard_expires_at) VALUES (?, ?, 'active', 0, ?, ?, ?, ?, ?)")
+            .bind(id).bind(token_hash).bind(now).bind(now).bind(now).bind(expires_at).bind(hard_expires_at)
+            .execute(&self.pool).await.map_err(AppError::internal)?;
+        Ok(())
+    }
+
+    async fn shelf_by_token_hash(&self, token_hash: &[u8]) -> AppResult<Option<Shelf>> {
+        sqlx::query_as("SELECT id, token_hash, state, expires_at, hard_expires_at FROM shelves WHERE token_hash = ?")
+            .bind(token_hash).fetch_optional(&self.pool).await.map_err(AppError::internal)
+    }
+
+    async fn touch_activity(
+        &self,
+        shelf_id: &str,
+        now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> AppResult<()> {
+        sqlx::query("UPDATE shelves SET last_seen_at = ?, last_activity_at = ?, expires_at = ? WHERE id = ? AND state = 'active'")
+            .bind(now).bind(now).bind(expires_at).bind(shelf_id)
             .execute(&self.pool).await.map_err(AppError::internal)?;
         Ok(())
     }

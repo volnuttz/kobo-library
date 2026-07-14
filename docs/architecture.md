@@ -104,15 +104,27 @@ books are visible. Startup reconciliation finalizes a `pending` book when its
 published file exists, removes its metadata when the file does not exist, and
 retries file and metadata removal for `deleting` books.
 
-Until Phase 2 introduces capability-scoped routes, existing trusted-network
-routes select one server-generated compatibility shelf. Repository operations
-are already shelf-scoped; the compatibility shelf is not an authorization
-mechanism and must not be exposed publicly.
+Phase 2 removes the compatibility shelf. A shelf service generates a 256-bit
+random capability, stores only its SHA-256 hash, and resolves the internal shelf
+ID before any book lookup or filesystem operation. Capability comparisons are
+constant-time after the hash-index lookup.
 
 ## HTTP and Synchronization
 
 The canonical shelf URL and all mutations are shelf-scoped. The exact route
 shape may change, but authorization must be applied before resolving a book.
+
+The MVP route shape is `/s/<capability>/...`, with a trailing slash on the shelf
+page so conservative relative form, XHR, QR, and download URLs remain scoped.
+When `SHELF_ACCESS_CODE` is configured, `GET /` serves the creation form and a
+successful `POST /shelves` creates the shelf. In ungated local mode, `GET /`
+creates immediately. The access code is never included in the capability URL.
+
+`PUBLIC_BASE_URL` is authoritative for QR URLs when configured. Request Host is
+used only as the local-development fallback; forwarded headers are not trusted.
+Configuring a public base requires HTTPS and an access code at startup.
+Shelf responses disable storage in shared/private caches and set a no-referrer
+policy so same-origin asset/API requests do not disclose capability paths.
 
 Use periodic conditional polling for the critical shared-device experience.
 Return an ETag or revision and allow `304 Not Modified`. WebSockets and

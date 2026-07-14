@@ -1,16 +1,14 @@
 # Kobo Library
 
-A small Rust service for keeping a local Kobo-friendly book library on a
-Raspberry Pi or other home server.
+A Rust service for creating temporary, QR-shareable Kobo-friendly book shelves.
 
-Open the web page from a phone or computer, upload an EPUB, then open the same
-page from the Kobo browser and download the converted book. The app is designed
-for a trusted local network and intentionally does not use pairing keys or
-accounts.
+Open the web page to create a shelf, scan its QR code on another device, upload
+an EPUB, then download the converted book from the Kobo browser. Each shelf URL
+is an unguessable bearer capability; there are no user accounts.
 
 ## Features
 
-- Single local web page for upload, download, and deletion.
+- Temporary isolated shelves with capability-scoped URLs.
 - EPUB upload from a phone, tablet, or computer.
 - Automatic conversion from `.epub` to `.kepub.epub` with
   [kepubify](https://github.com/pgaskin/kepubify).
@@ -24,12 +22,12 @@ accounts.
 
 ## How To Use
 
-1. Open the app from a phone, tablet, or computer.
-2. Tap `Choose EPUB`.
-3. Pick an `.epub` or `.kepub.epub` file.
-4. Tap `Upload`.
-5. Open the same app page from the Kobo browser.
-6. Tap `Download` beside the book.
+1. Open the app from a phone, tablet, or computer to create a shelf.
+2. If configured, enter the deployment access code.
+3. Scan the QR code to join the same shelf on another device.
+4. Tap `Choose EPUB`.
+5. Pick an `.epub` or `.kepub.epub` file and tap `Upload`.
+6. Tap `Download` beside the book on the Kobo.
 
 The page also includes `Delete` actions for removing books from the local
 library.
@@ -50,12 +48,14 @@ of relying on the filename.
 
 ## Routes
 
-- `GET /` - main app page.
-- `POST /upload` - upload one EPUB file.
-- `GET /api/books` - list books used by the UI.
-- `GET /books/{id}/download` - download one stored kepub.
-- `DELETE /api/books/{id}` - delete one stored book.
-- `GET /qr/page.svg` - QR code for the current page URL.
+- `GET /` - create a shelf, or show the access-code form when gated.
+- `POST /shelves` - create a shelf in access-code-gated mode.
+- `GET /s/{capability}/` - shelf page.
+- `POST /s/{capability}/upload` - upload one EPUB.
+- `GET /s/{capability}/api/books` - list that shelf's books.
+- `GET /s/{capability}/books/{id}/download` - download a scoped kepub.
+- `DELETE /s/{capability}/api/books/{id}` - delete a scoped book.
+- `GET /s/{capability}/qr/page.svg` - QR code for joining the shelf.
 
 There is no `/receive` page anymore. The app is intentionally a single-page
 flow.
@@ -139,6 +139,12 @@ Configuration is via environment variables:
 | `DATA_DIR` | `./data` | Directory for metadata, uploads, and converted books. |
 | `KEPUBIFY_BIN` | `./bin/kepubify` if present, otherwise `kepubify` from `PATH` | Converter executable. |
 | `MAX_UPLOAD_MB` | `800` | Maximum request body size in MB. |
+| `PUBLIC_BASE_URL` | unset | Authoritative HTTPS origin used in QR shelf URLs. Required for hosted deployment. |
+| `SHELF_ACCESS_CODE` | unset | Deployment-wide code required only to create shelves. Must be set for hosted deployment. |
+
+When `PUBLIC_BASE_URL` is set, startup rejects non-HTTPS URLs and requires
+`SHELF_ACCESS_CODE`. With no public base URL, request Host is used only for the
+ungated local-development flow.
 
 ## Data Layout
 
@@ -148,15 +154,15 @@ Runtime data lives under `DATA_DIR`:
 data/
   library.sqlite3
   shelves/
-    00000000-0000-4000-8000-000000000001/
+    <internal-shelf-uuid>/
       books/
       uploads/
 ```
 
 - `library.sqlite3` stores shelf and book metadata and is migrated at startup.
 - Each shelf has isolated `books/` and temporary `uploads/` directories.
-- The fixed shelf shown above preserves the trusted-network UI until capability
-  shelves replace it in Phase 2.
+- Capabilities are not used in storage paths and plaintext capabilities are not
+  stored in SQLite.
 
 Existing `books.json` files are not detected or imported. This version starts
 with an empty SQLite library; retain an old data directory separately if needed.
@@ -185,6 +191,7 @@ src/
   library.rs     upload storage and conversion flow
   books.rs       book models and filename handling
   repository.rs SQLite shelf/book repositories and migrations
+  shelves.rs    capability generation and shelf authorization
   storage.rs     shelf-scoped filesystem paths
   epub.rs        EPUB metadata and kepub detection
   conversion.rs  kepubify wrapper
@@ -232,8 +239,9 @@ mDNS requires same-network access, multicast UDP 5353, and client support for
 
 ## Security
 
-Kobo Library has no authentication. Anyone on the reachable network can upload,
-download, and delete books.
+Shelf URLs are bearer credentials: anyone who has one can upload, download, and
+delete that shelf's books. Do not paste shelf URLs into logs or public issues.
 
-Use it only on a trusted local network. Do not expose it directly to the public
-internet.
+Capability isolation is implemented, but the resource controls and deployment
+hardening required by Phase 5 are not. Do not expose this version directly to
+the public internet.
