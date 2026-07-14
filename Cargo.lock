@@ -330,6 +330,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "epub-drop"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "base64",
+ "chrono",
+ "http-body-util",
+ "libc",
+ "qrcode",
+ "rand",
+ "roxmltree",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "subtle",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "tower-http",
+ "url",
+ "uuid",
+ "zip",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -815,34 +843,6 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "kobo-library"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "base64",
- "chrono",
- "http-body-util",
- "libc",
- "qrcode",
- "rand",
- "roxmltree",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "subtle",
- "tokio",
- "tokio-util",
- "tower",
- "tower-http",
- "url",
- "uuid",
- "zip",
 ]
 
 [[package]]

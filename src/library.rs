@@ -213,7 +213,7 @@ mod tests {
     #[tokio::test]
     async fn reconciliation_finishes_interrupted_publication() {
         let database = Database::memory().await.unwrap();
-        let root = std::env::temp_dir().join(format!("kobo-library-{}", Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("epub-drop-{}", Uuid::new_v4()));
         let storage = Storage::new(root.clone());
         let shelf_id = Uuid::new_v4().to_string();
         let book_id = Uuid::new_v4().to_string();
@@ -245,7 +245,7 @@ mod tests {
     #[tokio::test]
     async fn reconciliation_retries_interrupted_deletion() {
         let database = Database::memory().await.unwrap();
-        let root = std::env::temp_dir().join(format!("kobo-library-{}", Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("epub-drop-{}", Uuid::new_v4()));
         let storage = Storage::new(root.clone());
         let shelf_id = Uuid::new_v4().to_string();
         let book_id = Uuid::new_v4().to_string();

@@ -71,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    println!("kobo-library is listening on http://{addr}");
+    println!("epub-drop is listening on http://{addr}");
     axum::serve(listener, app).await?;
 
     Ok(())

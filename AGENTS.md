@@ -1,8 +1,8 @@
-# Kobo Library Agent Guide
+# Epub Drop Agent Guide
 
 ## Mission
 
-Evolve Kobo Library from one persistent trusted-network library into an
+Evolve Epub Drop from one persistent trusted-network library into an
 internet-hosted service providing temporary, QR-shareable EPUB shelves while
 preserving compatibility with Kobo's older browser.
 

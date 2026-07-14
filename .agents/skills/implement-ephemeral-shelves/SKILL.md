@@ -1,6 +1,6 @@
 ---
 name: implement-ephemeral-shelves
-description: Implement and refactor Kobo Library's temporary QR-shareable shelf lifecycle. Use for tasks involving shelf creation or joining, capability-scoped routes, SQLite persistence, shelf-specific book storage, cross-device polling, inactivity expiration, cleanup, or migrations away from the global library.
+description: Implement and refactor Epub Drop's temporary QR-shareable shelf lifecycle. Use for tasks involving shelf creation or joining, capability-scoped routes, SQLite persistence, shelf-specific book storage, cross-device polling, inactivity expiration, cleanup, or migrations away from the global library.
 ---
 
 # Implement Ephemeral Shelves
@@ -47,4 +47,3 @@ Do not introduce object storage, distributed queues, WebSockets, accounts, or
 multi-instance coordination unless the active roadmap phase explicitly calls
 for them. Record newly required product choices in `docs/decisions.md` instead
 of hiding them as implementation defaults.
-

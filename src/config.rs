@@ -101,7 +101,7 @@ impl Config {
     #[cfg(test)]
     pub(crate) fn for_test_with_public_url(public_base_url: &str) -> Self {
         Self::for_test(
-            std::env::temp_dir().join("kobo-library-config-test"),
+            std::env::temp_dir().join("epub-drop-config-test"),
             Some(public_base_url),
             None,
         )

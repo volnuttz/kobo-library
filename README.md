@@ -1,4 +1,4 @@
-# Kobo Library
+# Epub Drop
 
 A Rust service for creating temporary, QR-shareable Kobo-friendly book shelves.
 
@@ -34,8 +34,8 @@ is an unguessable bearer capability; there are no user accounts.
 5. Pick an `.epub` or `.kepub.epub` file and tap `Upload`.
 6. Tap `Download` beside the book on the Kobo.
 
-The page also includes `Delete` actions for removing books from the local
-library.
+The page also includes `Delete` actions for removing books from the temporary
+shelf.
 
 ## Book Handling
 
@@ -89,26 +89,26 @@ For a release build:
 
 ```sh
 cargo build --release
-./target/release/kobo-library
+./target/release/epub-drop
 ```
 
 ## systemd User Service
 
-You can run Kobo Library as a systemd user service on a Raspberry Pi or other
-Linux home server. Create `~/.config/systemd/user/kobo-library.service`:
+You can run Epub Drop as a systemd user service on a Raspberry Pi or other
+Linux home server. Create `~/.config/systemd/user/epub-drop.service`:
 
 ```ini
 [Unit]
-Description=Kobo Library
+Description=Epub Drop
 After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/path/to/kobo-library
-ExecStart=/path/to/kobo-library/target/release/kobo-library
+WorkingDirectory=/path/to/epub-drop
+ExecStart=/path/to/epub-drop/target/release/epub-drop
 Environment=PORT=3001
-Environment=DATA_DIR=/path/to/kobo-library/data
-Environment=KEPUBIFY_BIN=/path/to/kobo-library/bin/kepubify
+Environment=DATA_DIR=/path/to/epub-drop/data
+Environment=KEPUBIFY_BIN=/path/to/epub-drop/bin/kepubify
 Environment=MAX_UPLOAD_MB=100
 Environment=CONVERSION_CONCURRENCY=2
 Restart=on-failure
@@ -120,19 +120,19 @@ WantedBy=default.target
 Useful commands:
 
 ```sh
-systemctl --user status kobo-library.service
-systemctl --user restart kobo-library.service
-systemctl --user stop kobo-library.service
-systemctl --user enable kobo-library.service
-systemctl --user disable --now kobo-library.service
-journalctl --user -u kobo-library.service -f
+systemctl --user status epub-drop.service
+systemctl --user restart epub-drop.service
+systemctl --user stop epub-drop.service
+systemctl --user enable epub-drop.service
+systemctl --user disable --now epub-drop.service
+journalctl --user -u epub-drop.service -f
 ```
 
 After rebuilding the release binary, restart the service:
 
 ```sh
 cargo build --release
-systemctl --user restart kobo-library.service
+systemctl --user restart epub-drop.service
 ```
 
 ## Configuration
@@ -229,13 +229,13 @@ static/
 Check whether the service is running:
 
 ```sh
-systemctl --user status kobo-library.service
+systemctl --user status epub-drop.service
 ```
 
 Follow logs:
 
 ```sh
-journalctl --user -u kobo-library.service -f
+journalctl --user -u epub-drop.service -f
 ```
 
 Confirm the app responds locally:

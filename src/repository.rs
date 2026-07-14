@@ -221,7 +221,7 @@ mod tests {
 
     #[tokio::test]
     async fn migrations_and_metadata_survive_restart() {
-        let path = std::env::temp_dir().join(format!("kobo-library-{}.sqlite3", Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("epub-drop-{}.sqlite3", Uuid::new_v4()));
         let shelf_id = Uuid::new_v4().to_string();
         {
             let database = Database::open(&path).await.unwrap();

@@ -41,7 +41,7 @@ use crate::{
     storage::{Storage, remove_file_if_exists},
 };
 
-const CREATE_PAGE: &str = r#"<!doctype html><html><head><title>Kobo Library</title><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="referrer" content="no-referrer"/><link rel="stylesheet" href="/static/style.css"/></head><body><main class="wrapper"><h1>Kobo Library</h1><form action="/shelves" method="post"><label for="access_code">Access code</label><input id="access_code" name="access_code" type="password" required/><input type="submit" value="Create shelf"/></form></main></body></html>"#;
+const CREATE_PAGE: &str = r#"<!doctype html><html><head><title>Epub Drop</title><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="referrer" content="no-referrer"/><link rel="stylesheet" href="/static/style.css"/></head><body><main class="wrapper"><h1>Epub Drop</h1><form action="/shelves" method="post"><label for="access_code">Access code</label><input id="access_code" name="access_code" type="password" required/><input type="submit" value="Create shelf"/></form></main></body></html>"#;
 
 #[derive(Clone)]
 pub struct AppState {

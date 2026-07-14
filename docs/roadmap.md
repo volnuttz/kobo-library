@@ -2,7 +2,7 @@
 
 ## Goal
 
-Turn Kobo Library into an internet-hosted service where opening the site creates
+Turn Epub Drop into an internet-hosted service where opening the site creates
 a temporary shelf, scanning its QR code joins another device to that shelf, and
 all joined devices can upload, list, download, and delete EPUBs. Shelves and
 their files expire after inactivity.

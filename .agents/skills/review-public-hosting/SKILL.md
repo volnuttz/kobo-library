@@ -1,6 +1,6 @@
 ---
 name: review-public-hosting
-description: Review Kobo Library changes for safe internet hosting and bounded anonymous use. Use when code or configuration affects public endpoints, capability URLs, uploads/downloads, EPUB or ZIP parsing, kepubify execution, quotas, rate limiting, expiration cleanup, proxy/HTTPS behavior, logging, deployment, or operational readiness.
+description: Review Epub Drop changes for safe internet hosting and bounded anonymous use. Use when code or configuration affects public endpoints, capability URLs, uploads/downloads, EPUB or ZIP parsing, kepubify execution, quotas, rate limiting, expiration cleanup, proxy/HTTPS behavior, logging, deployment, or operational readiness.
 ---
 
 # Review Public Hosting
@@ -66,4 +66,3 @@ security advice.
 
 Do not approve public readiness merely because functional tests pass. Tie the
 conclusion to the Phase 5 exit criteria in `docs/roadmap.md`.
-
