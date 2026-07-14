@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Public Hosting"
+  short_description: "Audit public-hosting safety and readiness"
+  default_prompt: "Use $review-public-hosting to review this change for internet-facing security and operations."

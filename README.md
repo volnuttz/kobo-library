@@ -21,7 +21,6 @@ accounts.
   want to open it on a phone.
 - Rust/Axum server with a single compiled binary.
 - systemd user service support.
-- Docker Compose support.
 
 ## How To Use
 
@@ -128,29 +127,6 @@ After rebuilding the release binary, restart the service:
 ```sh
 cargo build --release
 systemctl --user restart kobo-library.service
-```
-
-## Docker Compose
-
-Docker is not currently installed on this Pi, but the project includes a Compose
-setup for machines that have Docker available:
-
-```sh
-docker compose up -d --build
-```
-
-The image downloads the correct `kepubify` binary for these Linux
-architectures:
-
-- x86_64
-- ARM64
-- ARMv7
-- ARMv6
-
-The Compose service mounts local persistent data:
-
-```text
-./data:/app/data
 ```
 
 ## Configuration

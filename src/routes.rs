@@ -145,27 +145,6 @@ fn _qr_preview_for_tests(url: &str) -> String {
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn adds_configured_port_when_host_has_none() {
-        assert_eq!(host_with_port("raspi.local", 3001), "raspi.local:3001");
-    }
-
-    #[test]
-    fn keeps_existing_host_port() {
-        assert_eq!(host_with_port("raspi.local:3001", 3001), "raspi.local:3001");
-    }
-
-    #[test]
-    fn adds_svg_description_for_debugging() {
-        let svg = with_svg_description("<svg></svg>".to_string(), "http://raspi.local:3001/");
-        assert!(svg.contains("<desc>http://raspi.local:3001/</desc>"));
-    }
-}
-
 async fn upload_book(State(state): State<AppState>, mut multipart: Multipart) -> AppResult<String> {
     let mut saved_upload: Option<(PathBuf, String, u64)> = None;
 
@@ -263,4 +242,25 @@ async fn delete_book(
     write_books(&state.config, &books).await?;
 
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn adds_configured_port_when_host_has_none() {
+        assert_eq!(host_with_port("raspi.local", 3001), "raspi.local:3001");
+    }
+
+    #[test]
+    fn keeps_existing_host_port() {
+        assert_eq!(host_with_port("raspi.local:3001", 3001), "raspi.local:3001");
+    }
+
+    #[test]
+    fn adds_svg_description_for_debugging() {
+        let svg = with_svg_description("<svg></svg>".to_string(), "http://raspi.local:3001/");
+        assert!(svg.contains("<desc>http://raspi.local:3001/</desc>"));
+    }
 }

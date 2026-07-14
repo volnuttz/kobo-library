@@ -121,6 +121,36 @@ fn sanitize_filename(filename: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    fn test_config(data_dir: PathBuf) -> Config {
+        Config {
+            port: 3001,
+            books_dir: data_dir.join("books"),
+            uploads_dir: data_dir.join("uploads"),
+            metadata_path: data_dir.join("books.json"),
+            data_dir,
+            kepubify_bin: PathBuf::from("kepubify"),
+            max_upload_bytes: 800 * 1024 * 1024,
+        }
+    }
+
+    fn sample_book() -> Book {
+        Book {
+            id: "book-id".to_string(),
+            title: "A Book".to_string(),
+            author: Some("An Author".to_string()),
+            filename: "A Book.kepub.epub".to_string(),
+            original_name: "A Book.epub".to_string(),
+            stored_filename: "book-id-A Book.kepub.epub".to_string(),
+            size: 123,
+            uploaded_at: "2026-01-02T03:04:05Z".parse().unwrap(),
+        }
+    }
+
+    fn temp_data_dir() -> PathBuf {
+        std::env::temp_dir().join(format!("kobo-library-test-{}", uuid::Uuid::new_v4()))
+    }
 
     #[test]
     fn converts_epub_filename_to_kepub() {
@@ -135,5 +165,34 @@ mod tests {
     #[test]
     fn removes_header_unsafe_characters() {
         assert_eq!(header_safe_filename("bad\"\\\r\n.epub"), "bad____.epub");
+    }
+
+    #[tokio::test]
+    async fn missing_metadata_is_an_empty_library() {
+        let data_dir = temp_data_dir();
+        let config = test_config(data_dir);
+
+        assert!(read_books(&config).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn metadata_round_trips_through_json() {
+        let data_dir = temp_data_dir();
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let config = test_config(data_dir.clone());
+        let expected = sample_book();
+
+        write_books(&config, std::slice::from_ref(&expected))
+            .await
+            .unwrap();
+        let actual = read_books(&config).await.unwrap();
+
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].id, expected.id);
+        assert_eq!(actual[0].title, expected.title);
+        assert_eq!(actual[0].author, expected.author);
+        assert_eq!(actual[0].stored_filename, expected.stored_filename);
+        assert_eq!(actual[0].size, expected.size);
+        std::fs::remove_dir_all(data_dir).unwrap();
     }
 }
