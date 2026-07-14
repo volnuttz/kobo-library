@@ -141,7 +141,7 @@ async fn shelf_page(
 ) -> AppResult<Response> {
     state.shelves.authorize(&token, true).await?;
     enforce_rate(&state, "page", &token, 30, 60)?;
-    private_response(Html(include_str!("../static/upload.html")))
+    private_response(Html(include_str!("../static/shelf.html")))
 }
 
 async fn list_books(
@@ -806,7 +806,7 @@ mod tests {
         let javascript = format!(
             "{}\n{}\n{}",
             include_str!("../static/common.js"),
-            include_str!("../static/upload.html"),
+            include_str!("../static/shelf.html"),
             include_str!("../static/app.js")
         );
         for unsupported in [

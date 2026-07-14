@@ -218,7 +218,7 @@ src/
   conversion.rs  kepubify wrapper
   error.rs       HTTP error mapping
 static/
-  upload.html    single app page
+  shelf.html     single shelf app page
   style.css      UI styling
   common.js      small shared browser helpers
   app.js         upload, list, download, delete behavior
