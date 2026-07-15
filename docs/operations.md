@@ -11,6 +11,9 @@ The supplied `Dockerfile` builds the release binary and bundles the pinned
 below; this repository intentionally contains no provider-specific deployment
 configuration.
 
+The minimum supported Rust version is 1.88; the Docker builder is pinned to
+that version so it matches the dependency graph recorded in `Cargo.lock`.
+
 The image verifies the pinned x86_64 `kepubify` binary by SHA-256. For an ARM
 image, provide `--build-arg KEPUBIFY_SHA256=...` for the matching official
 release asset; do not disable the verification.
