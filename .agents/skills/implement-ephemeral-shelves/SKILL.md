@@ -5,16 +5,16 @@ description: Implement and refactor Epub Drop's temporary QR-shareable shelf lif
 
 # Implement Ephemeral Shelves
 
-Implement one roadmap slice at a time while preserving shelf isolation, file
-safety, and Kobo-browser compatibility.
+Implement one coherent shelf-lifecycle change at a time while preserving shelf
+isolation, file safety, and Kobo-browser compatibility.
 
 ## Workflow
 
-1. Read `AGENTS.md`, `docs/architecture.md`, and the active phase in
-   `docs/roadmap.md`. Read `docs/decisions.md` when the task touches an open or
-   accepted decision.
-2. Inspect the current code and tests. State which roadmap item the task
-   advances and identify any design/code conflict.
+1. Read `AGENTS.md`, `docs/architecture.md`, `docs/roadmap.md`, and relevant
+   accepted decisions in `docs/decisions.md`.
+2. Inspect the current code and tests. State whether the task is maintenance,
+   a documented deferred item, or a new proposal; identify any design/code
+   conflict.
 3. Define the lifecycle and failure cases before editing:
    - Which shelf capability authorizes the operation?
    - Which database and filesystem states can be partially completed?
@@ -44,6 +44,6 @@ safety, and Kobo-browser compatibility.
 ## Scope Control
 
 Do not introduce object storage, distributed queues, WebSockets, accounts, or
-multi-instance coordination unless the active roadmap phase explicitly calls
-for them. Record newly required product choices in `docs/decisions.md` instead
-of hiding them as implementation defaults.
+multi-instance coordination without an explicit user request and an updated
+architecture decision. Record newly required product choices in
+`docs/decisions.md` instead of hiding them as implementation defaults.

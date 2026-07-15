@@ -65,4 +65,5 @@ security advice.
 - Low: limited hardening or operational visibility issue.
 
 Do not approve public readiness merely because functional tests pass. Tie the
-conclusion to the Phase 5 exit criteria in `docs/roadmap.md`.
+conclusion to the relevant product acceptance criteria, deployment contract,
+and operational procedures in `docs/roadmap.md` and `docs/operations.md`.

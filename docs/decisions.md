@@ -69,13 +69,15 @@ Implementation note: setting `SHELF_ACCESS_CODE` enables the gate. Leaving it
 unset is an explicit local-development mode in which `GET /` creates a shelf
 immediately; hosted deployment configuration must set it.
 
-### ADR-010: The first deployment uses one Fly.io Machine and managed HTTPS
+### ADR-010: Hosted deployment is platform-agnostic and single-instance
 
-The first hosted environment is one Fly.io Machine, one persistent volume for
-SQLite and shelf files, and Fly Proxy TLS termination with HTTPS-only public
-traffic. The deployment owner owns platform configuration. Do not scale beyond
-one Machine while SQLite and files are local; revisit the platform if volume
-cost, regional requirements, or operational experience justify a move.
+The service ships as a container image and may run on any hosting environment
+that provides HTTPS termination, one persistent local volume for SQLite and
+shelf files, secret injection, health checking, metrics collection, and
+graceful `SIGTERM` delivery. The deployment owner chooses and configures that
+environment. Do not run more than one application instance while SQLite and
+files are local; revisit the platform boundary when shared storage and
+coordination are implemented.
 
 ### ADR-011: Hosted mode starts with an empty library
 

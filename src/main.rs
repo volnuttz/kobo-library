@@ -72,7 +72,32 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     println!("epub-drop is listening on http://{addr}");
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
     Ok(())
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+
+        let mut terminate =
+            signal(SignalKind::terminate()).expect("installing the SIGTERM handler must succeed");
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => {
+                result.expect("installing the Ctrl-C handler must succeed");
+            }
+            _ = terminate.recv() => {}
+        }
+    }
+
+    #[cfg(not(unix))]
+    tokio::signal::ctrl_c()
+        .await
+        .expect("installing the Ctrl-C handler must succeed");
+
+    println!("shutdown signal received; draining in-flight requests");
 }

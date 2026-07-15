@@ -91,6 +91,7 @@ impl AsyncRead for GuardedDownload {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(root))
+        .route("/healthz", get(healthz))
         .route("/shelves", post(create_shelf_with_code))
         .route("/s/{token}/", get(shelf_page))
         .route("/s/{token}/qr/{target}", get(qr_code))
@@ -114,6 +115,10 @@ async fn root(State(state): State<AppState>) -> AppResult<Response> {
         return private_response(Html(CREATE_PAGE));
     }
     create_shelf_redirect(&state).await
+}
+
+async fn healthz() -> axum::http::StatusCode {
+    axum::http::StatusCode::NO_CONTENT
 }
 
 async fn create_shelf_with_code(
@@ -582,6 +587,23 @@ mod tests {
             .to_str()
             .unwrap();
         assert!(location.starts_with("/s/") && location.ends_with('/'));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn health_check_needs_no_capability() {
+        let (app, _, _, _, _, root) = test_app().await;
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/healthz")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
         std::fs::remove_dir_all(root).unwrap();
     }
 

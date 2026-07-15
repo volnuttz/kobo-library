@@ -1,4 +1,4 @@
 interface:
   display_name: "Implement Ephemeral Shelves"
   short_description: "Build shelf-scoped features safely"
-  default_prompt: "Use $implement-ephemeral-shelves to implement the next shelf feature from the roadmap."
+  default_prompt: "Use $implement-ephemeral-shelves to safely change Epub Drop shelf behavior."

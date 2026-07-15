@@ -24,6 +24,8 @@ is an unguessable bearer capability; there are no user accounts.
   automatic retryable cleanup.
 - Rust/Axum server with a single compiled binary.
 - systemd user service support.
+- A portable container image for a single-instance deployment with persistent
+  storage.
 
 ## How To Use
 
@@ -134,6 +136,14 @@ After rebuilding the release binary, restart the service:
 cargo build --release
 systemctl --user restart epub-drop.service
 ```
+
+## Hosted Deployment
+
+The repository provides a production `Dockerfile`; see
+[`docs/operations.md`](docs/operations.md) for platform-neutral deployment,
+monitoring, restart, rollback, and launch procedures. Run exactly one service
+instance with one persistent mounted data directory while SQLite and shelf files
+are local.
 
 ## Configuration
 

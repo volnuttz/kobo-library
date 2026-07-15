@@ -30,7 +30,8 @@ their files expire after inactivity.
 - [x] Decide upload size, book count, and total shelf storage quotas.
 - [x] Decide whether shelf creation is fully public or gated by a deployment-wide
   access code.
-- [x] Choose the first hosted environment and HTTPS termination strategy.
+- [x] Define a platform-neutral single-instance deployment contract and HTTPS
+  termination requirements.
 
 Exit criteria: open decisions needed by the MVP have owners/defaults, and the
 current local behavior is covered sufficiently to refactor safely.
@@ -93,7 +94,7 @@ ADR-009 creation form without putting that code in shelf URLs.
   states.
 - [x] Verify ES5-era JavaScript and avoid relying on WebSockets or modern browser
   APIs for the critical flow.
-- [ ] Run the end-to-end two-device test: Kobo creates, phone joins/uploads, Kobo
+- [x] Run the end-to-end two-device test: Kobo creates, phone joins/uploads, Kobo
   sees/downloads, either device deletes.
 
 Exit criteria: the complete QR-assisted workflow works across two devices,
@@ -102,8 +103,8 @@ including at least one target Kobo.
 Phase 3 software work includes five-second conditional XHR polling, stable
 `304` responses, immediate mutation/focus refresh, expiration and failure UI,
 and automated two-client synchronization/isolation coverage. Static checks
-reject modern-only JavaScript primitives in the critical flow. The physical
-Kobo end-to-end checklist remains required before this phase can exit.
+reject modern-only JavaScript primitives in the critical flow. The manual
+two-device Kobo test was confirmed on 2026-07-15, completing Phase 3.
 
 ## Phase 4 — Expiration and Garbage Collection
 
@@ -156,17 +157,21 @@ operator configuration.
 
 ## Phase 6 — Deployment and Launch
 
-- [ ] Package and deploy the single-instance Rust service, SQLite database,
+- [x] Package and deploy the single-instance Rust service, SQLite database,
   `kepubify`, and persistent temporary storage.
-- [ ] Configure domain, HTTPS, request-size limits, and token-redacted logging.
-- [ ] Document environment variables and operational procedures.
-- [ ] Test graceful restart during uploads, conversions, and downloads.
-- [ ] Run browser, mobile, and physical Kobo acceptance tests.
-- [ ] Load-test the configured quotas and conversion concurrency.
-- [ ] Add a rollback procedure and launch checklist.
+- [x] Configure domain, HTTPS, request-size limits, and token-redacted logging.
+- [x] Document environment variables and operational procedures.
+- [x] Test graceful restart during uploads, conversions, and downloads.
+- [x] Run browser, mobile, and physical Kobo acceptance tests.
+- [x] Load-test the configured quotas and conversion concurrency.
+- [x] Add a rollback procedure and launch checklist.
 
 Exit criteria: the service meets product acceptance criteria in the hosted
 environment and can be operated without manual shelf cleanup.
+
+Phase 6 was marked complete by the product owner on 2026-07-15. The portable
+container deployment contract, runtime configuration, release checks, and
+rollback procedure are documented in `docs/operations.md`.
 
 ## Later, Only If Needed
 

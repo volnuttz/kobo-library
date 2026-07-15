@@ -11,7 +11,7 @@ all critical checks pass; otherwise record it as best-effort with the failure.
 
 | Date | Tester | Model | Firmware | Result | Notes or issue |
 | --- | --- | --- | --- | --- | --- |
-| Not yet run | Unassigned | Initial target Kobo | Unknown | Pending | Physical device required |
+| 2026-07-15 | User | Kobo (model not recorded) | Not recorded | Core two-device flow passed | Kobo created; phone joined/uploaded; Kobo saw/downloaded; either device deleted. |
 
 The product owner chooses the initial target models. The release owner must
 ensure at least one target Kobo passes before Phase 3 exits and rerun the list
