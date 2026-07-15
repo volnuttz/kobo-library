@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release Epub Drop"
+  short_description: "Prepare and publish a safe Epub Drop release"
+  default_prompt: "Use $release-epub-drop to prepare the next Epub Drop release."
